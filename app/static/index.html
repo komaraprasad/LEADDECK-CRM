@@ -235,7 +235,6 @@
           </div>
           <div class="mt-5 pt-4 border-t border-slate-100 flex items-center gap-3">
             <div id="status-${t.key}" class="flex-1 min-w-0"></div>
-            <button onclick="openTool('${t.key}')" class="px-3.5 py-2 rounded-lg text-[13px] font-semibold text-slate-700 hover:bg-slate-100 transition-colors">Open here</button>
             <a href="${t.url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[13px] font-semibold transition-colors">
               Launch ${svg('M7 17L17 7M8 7h9v9', 'arrow w-3.5 h-3.5', 2.6)}
             </a>
@@ -313,6 +312,11 @@
 
     function openTool(key) {
       const t = TOOLS.find(x => x.key === key);
+      // Always in its own tab: the tools' Chrome extensions only run in a top-level page (not inside an
+      // embedded frame), so embedded they keep asking to install the extension; and the http:// tools are
+      // blocked inside this https:// page anyway.
+      window.open(t.url, '_blank', 'noopener');
+      return;
       activeKey = key;
       $('pageTitle').textContent = t.name;
       $('newTabBtn').href = t.url;
