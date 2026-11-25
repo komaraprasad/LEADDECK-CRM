@@ -348,3 +348,4 @@ th.sortable{padding:0}.thb{all:unset;cursor:pointer;display:block;padding:10px 1
 @media (max-width:1100px){.kpis.k4{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:520px){.kpis.k4{grid-template-columns:1fr}.leg.row4{grid-template-columns:1fr}.spark{width:72px}.fr{grid-template-columns:90px 1fr 88px}}
 @media (prefers-reduced-motion:reduce){.meter i{animation:none}}
+.tag.noinfo{background:#f1f3f9;color:#6b7392;border:1px dashed #cdd3e6;white-space:nowrap}
