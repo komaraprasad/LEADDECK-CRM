@@ -1,7 +1,11 @@
 # LeadDeck Phase 1 (separate copy). Secrets are set in the Render dashboard, never in this file.
 services:
   - type: web
-    name: leaddeck
+    name: leaddeck-sg
+    # Same region as the Neon database (ap-southeast-1): every query is a round trip, and
+    # Oregon <-> Singapore made a 100-record sync take minutes. Render cannot move a service
+    # between regions, hence the new name (a new service); delete the old Oregon one afterwards.
+    region: singapore
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
