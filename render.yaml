@@ -1,0 +1,27 @@
+# LeadDeck Phase 1 (separate copy). Secrets are set in the Render dashboard, never in this file.
+services:
+  - type: web
+    name: leaddeck
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # One worker: sync locking is in-process. Threads handle concurrent requests.
+    startCommand: gunicorn wsgi:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL     # Neon connection string, e.g. postgresql://user:pass@host/db?sslmode=require
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SYNC_TOKEN       # optional: enables POST /api/sync/cron for an external scheduler
+        sync: false
+      - key: ROCKETREACH_API_KEY   # enrichment; without it the Enrich section says the key is missing
+        sync: false
+      - key: CRM_EVENT_TOKEN       # optional: enables POST /api/crm/events for an outreach tool
+        sync: false
+      - key: TOOL_UTC_OFFSET       # time zone of tool timestamps that carry none (the tools record India time)
+        value: "+05:30"

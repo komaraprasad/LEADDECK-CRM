@@ -1,0 +1,57 @@
+"""Versioned schema. {PK} is replaced per dialect. All timestamps are ISO-8601 UTC text (portable)."""
+
+MIGRATIONS = [
+    [  # version 1
+        "CREATE TABLE companies ({PK}, name TEXT, name_key TEXT, linkedin_url TEXT, domain TEXT, website TEXT, industry TEXT, size TEXT, first_seen TEXT, last_seen TEXT)",
+        "CREATE UNIQUE INDEX uq_companies_url ON companies(linkedin_url)",
+        "CREATE INDEX ix_companies_domain ON companies(domain)",
+        "CREATE INDEX ix_companies_namekey ON companies(name_key)",
+        "CREATE TABLE people ({PK}, company_id INTEGER, full_name TEXT, name_key TEXT, headline TEXT, title TEXT, location TEXT, linkedin_url TEXT, email TEXT, phone TEXT, lead_type TEXT NOT NULL DEFAULT 'unknown', match_confidence TEXT NOT NULL DEFAULT 'high', first_seen TEXT, last_seen TEXT)",
+        "CREATE UNIQUE INDEX uq_people_url ON people(linkedin_url)",
+        "CREATE INDEX ix_people_namekey ON people(name_key)",
+        "CREATE INDEX ix_people_company ON people(company_id)",
+        "CREATE TABLE lead_sources ({PK}, tool TEXT NOT NULL, kind TEXT NOT NULL, source_key TEXT NOT NULL, person_id INTEGER, company_id INTEGER, job_id INTEGER, raw_payload TEXT, collected_at TEXT, synced_at TEXT)",
+        "CREATE UNIQUE INDEX uq_sources ON lead_sources(tool, kind, source_key)",
+        "CREATE INDEX ix_sources_person ON lead_sources(person_id)",
+        "CREATE TABLE job_postings ({PK}, tool TEXT NOT NULL, source_key TEXT NOT NULL, company_id INTEGER, title TEXT, job_url TEXT, location TEXT, posted TEXT, first_seen TEXT, last_seen TEXT)",
+        "CREATE UNIQUE INDEX uq_jobs ON job_postings(tool, source_key)",
+        "CREATE TABLE campaigns ({PK}, name TEXT NOT NULL, description TEXT, created_by TEXT, created_at TEXT)",
+        "CREATE TABLE campaign_leads (campaign_id INTEGER NOT NULL, person_id INTEGER NOT NULL, added_at TEXT, status TEXT NOT NULL DEFAULT 'new', PRIMARY KEY (campaign_id, person_id))",
+        "CREATE TABLE sync_runs ({PK}, tool TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'pull', started TEXT, finished TEXT, status TEXT NOT NULL, dry_run INTEGER NOT NULL DEFAULT 0, fetched INTEGER DEFAULT 0, created INTEGER DEFAULT 0, updated INTEGER DEFAULT 0, skipped INTEGER DEFAULT 0, errors TEXT)",
+        "CREATE TABLE users ({PK}, email TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', created_at TEXT)",
+        "CREATE UNIQUE INDEX uq_users_email ON users(email)",
+    ],
+    [  # version 2: enrichment (Phase 2)
+        "ALTER TABLE people ADD COLUMN do_not_contact INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE people ADD COLUMN dnc_reason TEXT",
+        "CREATE TABLE contact_points ({PK}, person_id INTEGER NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL, provider TEXT NOT NULL, provider_grade TEXT, verification TEXT NOT NULL DEFAULT 'unverified', verified_at TEXT, is_primary INTEGER NOT NULL DEFAULT 0, found_at TEXT)",
+        "CREATE UNIQUE INDEX uq_contact_points ON contact_points(person_id, kind, value)",
+        "CREATE TABLE enrichment_runs ({PK}, campaign_id INTEGER NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, estimated_credits INTEGER DEFAULT 0, credit_cap INTEGER DEFAULT 0, lead_cap INTEGER DEFAULT 0, credits_used INTEGER DEFAULT 0, matched INTEGER DEFAULT 0, not_found INTEGER DEFAULT 0, errors INTEGER DEFAULT 0, skipped INTEGER DEFAULT 0, created_by TEXT, started TEXT, finished TEXT, note TEXT)",
+        "CREATE TABLE enrichment_items ({PK}, run_id INTEGER NOT NULL, person_id INTEGER NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, credits_used INTEGER DEFAULT 0, error TEXT, created_at TEXT)",
+        "CREATE INDEX ix_enrich_items_person ON enrichment_items(person_id, provider)",
+        "CREATE TABLE credit_ledger ({PK}, provider TEXT NOT NULL, run_id INTEGER, credits INTEGER NOT NULL, balance_after INTEGER, note TEXT, created_at TEXT)",
+        "CREATE TABLE erasures (linkedin_url TEXT PRIMARY KEY, erased_at TEXT)",
+    ],
+    [  # version 3: keep the shape (field names/types only, no values) of provider responses for diagnosis
+        "ALTER TABLE enrichment_items ADD COLUMN raw_shape TEXT",
+    ],
+    [  # version 4: wrong-person guard notes
+        "ALTER TABLE enrichment_items ADD COLUMN match_note TEXT",
+    ],
+    [  # version 5: CRM (Phase 3)
+        "CREATE TABLE crm_leads ({PK}, person_id INTEGER NOT NULL, stage TEXT NOT NULL DEFAULT 'new', owner_email TEXT, next_action_at TEXT, stage_changed_at TEXT, lost_reason TEXT, created_at TEXT)",
+        "CREATE UNIQUE INDEX uq_crm_leads_person ON crm_leads(person_id)",
+        "CREATE INDEX ix_crm_leads_stage ON crm_leads(stage)",
+        "CREATE TABLE lead_events ({PK}, person_id INTEGER, type TEXT NOT NULL, detail TEXT, actor TEXT, created_at TEXT)",
+        "CREATE INDEX ix_lead_events_person ON lead_events(person_id, id)",
+        "CREATE TABLE notes ({PK}, person_id INTEGER NOT NULL, body TEXT NOT NULL, author TEXT, created_at TEXT)",
+        "CREATE INDEX ix_notes_person ON notes(person_id)",
+        "CREATE TABLE tasks ({PK}, person_id INTEGER NOT NULL, title TEXT NOT NULL, due_at TEXT, owner_email TEXT, created_by TEXT, created_at TEXT, done_at TEXT)",
+        "CREATE INDEX ix_tasks_person ON tasks(person_id)",
+        "CREATE INDEX ix_tasks_owner ON tasks(owner_email, done_at)",
+    ],
+    [  # version 6: saved filter views (private or shared)
+        "CREATE TABLE saved_views ({PK}, name TEXT NOT NULL, page TEXT NOT NULL, filters TEXT NOT NULL, owner_email TEXT NOT NULL, shared INTEGER NOT NULL DEFAULT 0, created_at TEXT)",
+        "CREATE INDEX ix_saved_views_owner ON saved_views(owner_email, page)",
+    ],
+]

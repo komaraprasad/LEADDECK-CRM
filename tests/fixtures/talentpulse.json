@@ -1,0 +1,6 @@
+{"leads":[
+ {"linkedin_url":"https://www.linkedin.com/in/Asha-Rao/","first_name":"Asha","last_name":"Rao","full_name":"Asha Rao","current_title":"Data Engineer","company_name":"Globex","location":"Pune","email":"asha@globex.example","phone":"","headline":"Data Engineer at Globex","first_found_at":"2026-11-01T09:30:00"},
+ {"linkedin_url":"https://www.linkedin.com/in/jose-nunez","full_name":"José Ñúñez","current_title":"QA Lead","company_name":"Initech","location":"Madrid"},
+ {"linkedin_url":null,"full_name":null},
+ "garbage-row"
+]}

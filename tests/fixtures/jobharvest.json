@@ -1,0 +1,5 @@
+{"jobs":[
+ {"job_id":"123","title":"Data Engineer","company_name":"Globex","company_url":"https://www.linkedin.com/company/globex/","location":"Pune","posted":"2 days ago","contacts":"https://www.linkedin.com/in/asha-rao, https://www.linkedin.com/in/ravi-k","job_industry":"Software","job_size":"201-500","collected_at":"2026-11-05T08:00:00"},
+ {"job_id":"124","title":"SRE","company_name":"Initech","company_url":"","location":"Remote","contacts":""},
+ {"job_id":"125","title":"Orphan job"}
+]}

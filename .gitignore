@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.env
+
+.env
+.venv/
+leaddeck.db
+.pytest_cache/
+_to_delete/
+.venv-leaddeck/
+_archive/
+
+# source copies of the four tools (separate projects, read-only reference; not needed to run LeadDeck)
+reference/

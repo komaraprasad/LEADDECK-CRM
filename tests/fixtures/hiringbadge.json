@@ -1,0 +1,30 @@
+{
+ "total": 3,
+ "page": 1,
+ "page_size": 50,
+ "items": [
+  {
+   "profile_url": "https://in.linkedin.com/in/asha-rao",
+   "name": "Asha Rao",
+   "headline": "Hiring! Data Engineer at Globex",
+   "title": "Engineering Manager",
+   "company": "Globex",
+   "location": "Pune",
+   "status": "hiring",
+   "open_roles": "Data Engineer, SRE",
+   "first_found": "2026-11-02T10:00:00",
+   "last_seen": "2026-11-10T10:00:00"
+  },
+  {
+   "profile_url": "https://www.linkedin.com/in/ravi-k",
+   "name": "Ravi K",
+   "title": "Recruiter",
+   "company": "Umbrella",
+   "location": "Mumbai"
+  },
+  {
+   "name": null,
+   "profile_url": null
+  }
+ ]
+}
