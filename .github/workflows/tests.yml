@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest-timeout
+      - run: python -m pytest -q --timeout 60
+
+  postgres:
+    # The same suite on a throwaway Postgres started next to the tests (no secrets, never the live database).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest-timeout
+      - name: Run tests on Postgres
+        env:
+          LEADDECK_TEST_PG_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: python -m pytest -p no:cacheprovider -rf --tb=short --timeout 60 --durations=10 -v
