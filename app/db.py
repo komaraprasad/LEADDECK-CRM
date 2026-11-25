@@ -19,6 +19,7 @@ def now_iso() -> str:
 class Database:
     def __init__(self, url: str):
         self._lock = threading.RLock()
+        url = (url or "").strip()  # a value pasted into a dashboard often carries a trailing newline
         self._url = url
         self._depth = 0
         if url.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
