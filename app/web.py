@@ -1,5 +1,6 @@
 """Flask application: login, leads, campaigns, sync, import, export, legacy health endpoint."""
 from __future__ import annotations
+import os
 import hmac
 import json
 import secrets
@@ -120,7 +121,8 @@ def create_app(settings: Settings | None = None, db: Database | None = None, htt
     # ------------------------------------------------------------ public
     @app.get("/healthz")
     def healthz():
-        return jsonify(ok=True)
+        # which commit is running (Render sets RENDER_GIT_COMMIT), so a deploy can be checked without logging in
+        return jsonify(ok=True, version=(os.environ.get("RENDER_GIT_COMMIT") or "local")[:7])
 
     @app.get("/api/health")
     @login_required

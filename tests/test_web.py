@@ -157,3 +157,10 @@ def test_refuses_to_start_without_real_secret():
         create_app(Settings(secret_key="", testing=False), Database("sqlite:///:memory:"))
     with pytest.raises(RuntimeError):
         create_app(Settings(secret_key="change-me-to-a-long-random-string"), Database("sqlite:///:memory:"))
+
+
+def test_healthz_reports_deployed_version(app, monkeypatch):
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "a22e081f00ba7")
+    assert app.test_client().get("/healthz").get_json() == {"ok": True, "version": "a22e081"}
+    monkeypatch.delenv("RENDER_GIT_COMMIT")
+    assert app.test_client().get("/healthz").get_json() == {"ok": True, "version": "local"}
