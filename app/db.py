@@ -36,7 +36,9 @@ class Database:
     def _connect_pg(self):
         import psycopg  # imported lazily; not available in every environment
         from psycopg.rows import dict_row
-        return psycopg.connect(self._url, autocommit=True, row_factory=dict_row)
+        # prepare_threshold=None: no server-side prepared statements, which a connection pooler
+        # (e.g. Neon's -pooler endpoint / PgBouncer) can lose between queries.
+        return psycopg.connect(self._url, autocommit=True, row_factory=dict_row, prepare_threshold=None)
 
     def _sql(self, sql: str) -> str:
         return sql.replace("?", "%s") if self.dialect == "postgres" else sql

@@ -25,3 +25,5 @@ services:
         sync: false
       - key: TOOL_UTC_OFFSET       # time zone of tool timestamps that carry none (the tools record India time)
         value: "+05:30"
+      - key: PYTHON_VERSION        # pinned: every dependency ships ready-made wheels for 3.12
+        value: "3.12.8"
