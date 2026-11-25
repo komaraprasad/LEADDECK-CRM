@@ -11,7 +11,8 @@ PG_URL = os.environ.get("LEADDECK_TEST_PG_URL", "").strip()
 
 def _pg_url_with_schema(schema: str) -> str:
     url = PG_URL.replace("-pooler.", ".")  # startup options need a direct (non-pooled) connection
-    return url + ("&" if "?" in url else "?") + f"options=-csearch_path%3D{schema}"
+    # a stuck test must fail fast, never hang the run
+    return url + ("&" if "?" in url else "?") + f"options=-csearch_path%3D{schema}%20-cstatement_timeout%3D30000%20-clock_timeout%3D10000"
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +21,7 @@ def _postgres_mode(monkeypatch):
         yield
         return
     import psycopg
-    made = []
+    made, dbs = [], []
     real_init = Database.__init__
 
     def init(self, url):
@@ -31,11 +32,18 @@ def _postgres_mode(monkeypatch):
             made.append(schema)
             url = _pg_url_with_schema(schema)
         real_init(self, url)
+        dbs.append(self)
 
     monkeypatch.setattr(Database, "__init__", init)
     yield
+    for d in dbs:  # close first: an open transaction would make DROP SCHEMA wait forever
+        try:
+            d._conn.close()
+        except Exception:
+            pass
     if made:
         with psycopg.connect(PG_URL, autocommit=True) as c:
+            c.execute("SET lock_timeout = '10s'")
             for s in made:
                 c.execute(f"DROP SCHEMA IF EXISTS {s} CASCADE")
 

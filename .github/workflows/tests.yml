@@ -16,6 +16,7 @@ jobs:
       - run: python -m pytest -q
 
   postgres:
+    timeout-minutes: 20
     # Same suite on Postgres (Neon). Needs the repo secret NEON_TEST_URL (a throwaway test database).
     runs-on: ubuntu-latest
     steps:
@@ -29,4 +30,4 @@ jobs:
           LEADDECK_TEST_PG_URL: ${{ secrets.NEON_TEST_URL }}
         run: |
           if [ -z "$LEADDECK_TEST_PG_URL" ]; then echo "::error::Add the repo secret NEON_TEST_URL first"; exit 1; fi
-          python -m pytest -q -p no:cacheprovider -rf --tb=short
+          python -m pytest -p no:cacheprovider -rf --tb=short --durations=10 -v
