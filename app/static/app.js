@@ -47,6 +47,15 @@ const LD = (() => {
     sv('rect', { x: 11, y: 5, width: 20, height: 26, rx: 5, fill: '#19c6d6' }), sv('path', { d: 'M17.5 22.5 25 14M18.5 14H25v6.5', fill: 'none', stroke: '#0d1230', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })));
   const hueOf = s => { let h = 0; for (const ch of String(s || '?')) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
   const avatarFor = (name, size) => el('span', { class: 'av' + (size ? ' ' + size : ''), style: '--h:' + hueOf(name), 'aria-hidden': 'true' }, String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?');
+  // Some tools give a contact only as a LinkedIn link (no name). Show a name read from the link, marked as such.
+  const slugName = url => { const m = /\/in\/([^/?#]+)/.exec(url || ''); if (!m) return null;
+    const w = decodeURIComponent(m[1]).replace(/_/g, '-').split('-').filter(x => /^[a-z]+$/i.test(x));
+    return w.length && w.join('').length >= 2 ? w.map(x => x[0].toUpperCase() + x.slice(1).toLowerCase()).join(' ') : null; };
+  const nameOf = r => r.full_name || r.display_name || slugName(r.linkedin_url);
+  const fromLink = r => !r.full_name && !!nameOf(r);
+  const nameNode = (r, fallback) => fromLink(r)
+    ? el('span', { title: 'Name read from the LinkedIn link: the tool gave no name. Enrichment fills in the real name.' }, nameOf(r), el('span', { class: 'mut', style: 'font-weight:500;font-size:.8em' }, ' · from link'))
+    : (r.full_name || fallback);
   const bandOf = score => score >= 50 ? 'high' : score >= 20 ? 'medium' : 'low';
   // score 0 = no email, no phone, found by one tool: say so instead of a "0" ring that looks broken
   const notEnriched = lead => lead && lead.looked_up
@@ -220,9 +229,9 @@ const LD = (() => {
         history.replaceState(null, '', location.pathname + (query().toString() ? '?' + query() : ''));
         renderHead(); renderChips();
         tbody.replaceChildren(...(d.items.length ? d.items.map((r, i) => el('tr', { class: r.do_not_contact ? 'dnc-row' : '', style: '--i:' + Math.min(i, 16) },
-          el('td', {}, el('input', { type: 'checkbox', 'aria-label': 'Select ' + (r.full_name || 'lead'), checked: st.selected.has(r.id), onchange: e => { e.target.checked ? st.selected.add(r.id) : st.selected.delete(r.id); updSel(); } })),
-          el('td', { class: 'nw' }, el('div', { class: 'who-cell' }, avatarFor(r.full_name), el('div', {}, el('button', { class: 'lnkbtn', onclick: () => openDrawer(r.id, load) }, r.full_name || '(no name)'),
-            r.linkedin_url ? el('a', { class: 'lnk ext', href: r.linkedin_url, target: '_blank', rel: 'noopener noreferrer', title: 'Open LinkedIn profile', 'aria-label': 'LinkedIn profile of ' + (r.full_name || 'lead') }, ' ↗') : null,
+          el('td', {}, el('input', { type: 'checkbox', 'aria-label': 'Select ' + (nameOf(r) || 'lead'), checked: st.selected.has(r.id), onchange: e => { e.target.checked ? st.selected.add(r.id) : st.selected.delete(r.id); updSel(); } })),
+          el('td', { class: 'nw' }, el('div', { class: 'who-cell' }, avatarFor(nameOf(r)), el('div', {}, el('button', { class: 'lnkbtn', onclick: () => openDrawer(r.id, load) }, nameNode(r, '(no name)')),
+            r.linkedin_url ? el('a', { class: 'lnk ext', href: r.linkedin_url, target: '_blank', rel: 'noopener noreferrer', title: 'Open LinkedIn profile', 'aria-label': 'LinkedIn profile of ' + (nameOf(r) || 'lead') }, ' ↗') : null,
             r.match_confidence === 'low' ? el('span', { class: 'tag bad', title: 'No profile URL: matched by name and company' }, 'low match') : null,
             r.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null))),
           el('td', {}, r.title || r.headline || ''), el('td', {}, r.company_name || ''), el('td', {}, r.location || ''),
@@ -371,10 +380,10 @@ const LD = (() => {
       detail.replaceChildren(enrichCard, el('div', { class: 'card' }, el('div', { class: 'row' }, el('h2', { style: 'margin:0' }, c.name), el('span', { class: 'mut' }, c.lead_count + ' leads'), el('span', { style: 'flex:1' }),
         el('a', { class: 'btn ghost', href: '/api/campaigns/' + id + '/export.csv' }, 'Export CSV'), el('a', { class: 'btn ghost', href: '/api/campaigns/' + id + '/export.xlsx' }, 'Export Excel')),
         el('div', { class: 'tscroll', style: 'margin-top:10px' }, el('table', {}, el('thead', {}, el('tr', {}, ...['Name', 'Title', 'Company', 'Email', 'Email status', 'Phone', 'Type', ''].map(h => el('th', {}, h)))),
-          el('tbody', {}, ...c.leads.map(r => el('tr', {}, el('td', {}, r.full_name || '', r.do_not_contact ? el('span', { class: 'tag bad', style: 'margin-left:6px' }, 'do not contact') : null), el('td', {}, r.title || r.headline || ''), el('td', {}, r.company_name || ''), el('td', {}, r.email || ''), el('td', {}, statusTag(r)), el('td', {}, r.phone || '', r.company_phone && !r.phone ? el('div', { class: 'mut' }, 'company: ' + r.company_phone) : null), el('td', {}, typeTag(r.lead_type)),
+          el('tbody', {}, ...c.leads.map(r => el('tr', {}, el('td', {}, nameNode(r, ''), r.do_not_contact ? el('span', { class: 'tag bad', style: 'margin-left:6px' }, 'do not contact') : null), el('td', {}, r.title || r.headline || ''), el('td', {}, r.company_name || ''), el('td', {}, r.email || ''), el('td', {}, statusTag(r)), el('td', {}, r.phone || '', r.company_phone && !r.phone ? el('div', { class: 'mut' }, 'company: ' + r.company_phone) : null), el('td', {}, typeTag(r.lead_type)),
             el('td', {}, el('div', { class: 'row' },
-              el('button', { class: 'ghost', onclick: safe(async () => { if (!confirm('Remove ' + (r.full_name || 'this lead') + ' from ' + c.name + '? The lead itself is kept.')) return; await api('/api/campaigns/' + id + '/leads/' + r.id, { method: 'DELETE' }); toast('Removed from ' + c.name); open(id); loadList(); }) }, 'Remove'),
-              el('button', { class: 'ghost', title: 'Look this person up again (uses up to 1 credit)', onclick: async () => { if (!cfg.configured || !confirm('Look up ' + (r.full_name || 'this person') + ' again? This can use 1 credit.')) return; try { await api('/api/campaigns/' + id + '/enrich', { method: 'POST', json: { confirm: true, credit_cap: 1, lead_cap: 1, person_ids: [r.id], include_done: true } }); msg(out, 'Re-check started; refresh in a moment.', true); setTimeout(() => open(id), 6000); } catch (er) { msg(out, er.message); } } }, 'Re-check'),
+              el('button', { class: 'ghost', onclick: safe(async () => { if (!confirm('Remove ' + (nameOf(r) || 'this lead') + ' from ' + c.name + '? The lead itself is kept.')) return; await api('/api/campaigns/' + id + '/leads/' + r.id, { method: 'DELETE' }); toast('Removed from ' + c.name); open(id); loadList(); }) }, 'Remove'),
+              el('button', { class: 'ghost', title: 'Look this person up again (uses up to 1 credit)', onclick: async () => { if (!cfg.configured || !confirm('Look up ' + (nameOf(r) || 'this person') + ' again? This can use 1 credit.')) return; try { await api('/api/campaigns/' + id + '/enrich', { method: 'POST', json: { confirm: true, credit_cap: 1, lead_cap: 1, person_ids: [r.id], include_done: true } }); msg(out, 'Re-check started; refresh in a moment.', true); setTimeout(() => open(id), 6000); } catch (er) { msg(out, er.message); } } }, 'Re-check'),
               el('button', { class: 'ghost', onclick: safe(async () => { await api('/api/leads/' + r.id + '/do-not-contact', { method: 'POST', json: { value: !r.do_not_contact } }); toast(r.do_not_contact ? 'Contact allowed again' : 'Marked do not contact'); open(id); }) }, r.do_not_contact ? 'Allow contact' : 'Do not contact'),
               el('button', { class: 'ghost danger-text', onclick: async () => { if (!confirm('Permanently erase this person and all their data? This cannot be undone.')) return; try { await api('/api/leads/' + r.id, { method: 'DELETE' }); toast('Person erased'); open(id); loadList(); } catch (er) { msg(out, er.message); } } }, 'Erase'))))))))));
       if (scroll) detail.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
@@ -529,7 +538,7 @@ const LD = (() => {
           badCp.length ? el('details', { class: 'cp-more' }, el('summary', {}, badCp.length + ' invalid ' + (badCp.length === 1 ? 'address' : 'addresses') + ' (not usable)'), ...badCp.map(cpRow)) : null) :
         el('div', { class: 'mut' }, (d.email ? 'Email from tools: ' + d.email + '. ' : '') + 'No enriched contacts yet. Run enrichment from the campaign page.');
       body.replaceChildren(...[
-        el('div', { class: 'head' }, avatarFor(d.full_name, 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, d.full_name || 'Unnamed'), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
+        el('div', { class: 'head' }, avatarFor(nameOf(d), 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, nameNode(d, 'Unnamed')), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
           (d.company_industry || d.company_size) ? el('div', { class: 'mut', style: 'font-size:13px' }, [d.company_industry, d.company_size ? (/employee/i.test(d.company_size) ? d.company_size : d.company_size + ' employees') : null].filter(Boolean).join(' · ')) : null,
           d.linkedin_url ? el('a', { class: 'lnk', href: d.linkedin_url, target: '_blank', rel: 'noopener noreferrer' }, 'LinkedIn profile ↗') : null),
           d.score ? ringFor(d.score, 'lg') : notEnriched(d), el('button', { class: 'ghost', onclick: close, 'aria-label': 'Close' }, '✕')),
@@ -566,8 +575,8 @@ const LD = (() => {
         const col = d.columns[st]; total += col.count;
         const shown = staleOnly.checked ? col.items.filter(it => it.stale) : col.items;
         const body = el('div', { class: 'col-body' }, ...shown.map(it => {
-          const card = el('div', { class: 'lcard' + (it.do_not_contact ? ' dnc' : ''), draggable: 'true', tabindex: 0, role: 'button', 'data-pid': it.person_id, 'aria-label': (it.full_name || 'Lead') + ', open details' },
-            el('div', { class: 'top' }, avatarFor(it.full_name), el('div', {}, el('div', { class: 'lname' }, it.full_name || 'Unnamed'), el('div', { class: 'mut', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, [it.title, it.company_name].filter(Boolean).join(' · ') || '—'))),
+          const card = el('div', { class: 'lcard' + (it.do_not_contact ? ' dnc' : ''), draggable: 'true', tabindex: 0, role: 'button', 'data-pid': it.person_id, 'aria-label': (nameOf(it) || 'Lead') + ', open details' },
+            el('div', { class: 'top' }, avatarFor(nameOf(it)), el('div', {}, el('div', { class: 'lname' }, nameNode(it, 'Unnamed')), el('div', { class: 'mut', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, [it.title, it.company_name].filter(Boolean).join(' · ') || '—'))),
             el('div', { class: 'lmeta' }, it.email_status ? el('span', { class: 'tag ' + (it.email_status === 'valid' ? 'cand' : it.email_status === 'invalid' ? 'bad' : '') }, 'email ' + it.email_status) : null,
               it.stale ? el('span', { class: 'tag bad', title: 'No activity for ' + it.idle_days + ' days (flagged after ' + col.stale_after_days + ')' }, '⏱ ' + it.idle_days + 'd idle') : null,
               it.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null, it.open_tasks ? el('span', { class: 'tag' }, it.open_tasks + ' task' + (it.open_tasks > 1 ? 's' : '')) : null,

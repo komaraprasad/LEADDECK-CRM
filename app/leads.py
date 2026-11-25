@@ -21,6 +21,23 @@ _STAGE_SQL = "COALESCE(cl.stage, 'new')"
 _FROM = "FROM people p LEFT JOIN companies c ON c.id = p.company_id LEFT JOIN crm_leads cl ON cl.person_id = p.id"
 
 
+def name_from_linkedin(url: str | None) -> str | None:
+    """Readable name guessed from a profile URL slug ('riya-vedpathak-5651a32a3' -> 'Riya Vedpathak').
+    For display only, never for matching: it is a guess."""
+    if not url or "/in/" not in url:
+        return None
+    slug = url.split("/in/", 1)[1].split("?", 1)[0].strip("/").split("/", 1)[0]
+    words = [w for w in slug.replace("_", "-").split("-") if w and w.isalpha()]
+    return " ".join(w.capitalize() for w in words) if words and len("".join(words)) >= 2 else None
+
+
+def _display(r: dict) -> dict:
+    guess = None if r.get("full_name") else name_from_linkedin(r.get("linkedin_url"))
+    r["display_name"] = r.get("full_name") or guess
+    r["name_from_url"] = bool(guess)
+    return r
+
+
 def quality_band(score: int) -> str:
     return "high" if score >= 50 else "medium" if score >= 20 else "low"
 MAX_EXPORT = 50000
@@ -54,8 +71,10 @@ def _where(f: dict):
     if "q" in f:
         pat = _like(f["q"])
         w.append("(LOWER(COALESCE(p.full_name,'')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(p.headline,'')) LIKE ? ESCAPE '\\' "
-                 "OR LOWER(COALESCE(p.title,'')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(c.name,'')) LIKE ? ESCAPE '\\')")
-        p += [pat] * 4
+                 "OR LOWER(COALESCE(p.title,'')) LIKE ? ESCAPE '\\' OR LOWER(COALESCE(c.name,'')) LIKE ? ESCAPE '\\' "
+                 # the LinkedIn URL too: some tools (JobHarvest contacts) give only a profile link, no name
+                 "OR LOWER(COALESCE(p.linkedin_url,'')) LIKE ? ESCAPE '\\')")
+        p += [pat] * 5
     if "tool" in f:
         w.append("EXISTS (SELECT 1 FROM lead_sources s WHERE s.person_id = p.id AND s.tool = ?)")
         p.append(f["tool"])
@@ -116,6 +135,7 @@ def _attach_tools(db: Database, rows: list[dict]) -> list[dict]:
         r["quality"] = quality_band(r.get("score") or 0)
         r["tools"] = sorted(tools.get(r["id"], []))
         r["email_status"] = status.get(r["id"], "")
+        _display(r)
     return rows
 
 
@@ -178,7 +198,7 @@ def get_lead(db: Database, pid: int) -> dict | None:
     row["tools"] = sorted({s["tool"] for s in db.query("SELECT tool FROM lead_sources WHERE person_id=?", (pid,))})
     row["contact_points"] = db.query("SELECT kind, value, provider, provider_grade, line_type, verification, verified_at, is_primary, found_at FROM contact_points WHERE person_id=? ORDER BY kind, is_primary DESC, id", (pid,))
     row["sources"] = db.query("SELECT tool, kind, source_key, collected_at, synced_at FROM lead_sources WHERE person_id=? ORDER BY tool", (pid,))
-    return row
+    return _display(row)
 
 
 def export_rows(db: Database, filters: dict | None = None, ids: list[int] | None = None) -> list[dict]:

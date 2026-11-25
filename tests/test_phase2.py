@@ -465,3 +465,33 @@ def test_company_industry_and_size_are_shown_and_exported(db):
         assert (row["company_industry"], row["company_size"]) == ("Staffing & Recruiting", "51-200")
     labels = [label for _, label in EXPORT_COLUMNS]
     assert labels.index("Company Industry") == labels.index("Company") + 1 and "Company Size" in labels
+
+
+# ---- contacts a tool gives only as a LinkedIn link (JobHarvest)
+def test_url_only_contact_is_searchable_and_gets_a_display_name(db):
+    from app.leads import list_leads, get_lead, name_from_linkedin
+    a = mkperson(db, None, "https://www.linkedin.com/in/riya-vedpathak-5651a32a3", "Lenskart.com")
+    b = mkperson(db, None, "https://www.linkedin.com/in/nagamohanks", "Lenskart.com")
+    assert name_from_linkedin("https://www.linkedin.com/in/riya-vedpathak-5651a32a3/") == "Riya Vedpathak"
+    assert name_from_linkedin("https://www.linkedin.com/in/nagamohanks") == "Nagamohanks"
+    assert name_from_linkedin("https://www.linkedin.com/in/ACwAAB12345xyz") is None  # opaque id, not a name
+    assert name_from_linkedin(None) is None
+    assert list_leads(db, {"q": "nagamohan"})["total"] == 1
+    row = {r["id"]: r for r in list_leads(db, {})["items"]}[a]
+    assert row["full_name"] is None and row["display_name"] == "Riya Vedpathak" and row["name_from_url"]
+    assert get_lead(db, b)["display_name"] == "Nagamohanks"
+    named = mkperson(db, "Real Name", "https://www.linkedin.com/in/something-else")
+    r2 = get_lead(db, named)
+    assert r2["display_name"] == "Real Name" and not r2["name_from_url"]
+
+
+def test_enrichment_fills_blank_name_and_title_only(db):
+    a = mkperson(db, None, "https://www.linkedin.com/in/nagamohanks", "Lenskart.com")
+    b = mkperson(db, "Kept Name", "u2", "Acme"); db.update("people", b, {"title": "Kept Title"})
+    res = lambda n, t: ProviderResult("matched", [ContactValue("x%s@x.com" % n[:1], "valid", "A")], credits_used=1, matched_name=n, matched_title=t)
+    E.run_enrichment(db, FakeProvider({a: res("Naga Mohan K S", "Engineering Manager"), b: res("Kept Name", "Other Title")}), mkcamp(db, [a, b]), 5, 5)
+    assert db.one("SELECT full_name, title FROM people WHERE id=?", (a,)) == {"full_name": "Naga Mohan K S", "title": "Engineering Manager"}
+    assert db.one("SELECT full_name, title FROM people WHERE id=?", (b,)) == {"full_name": "Kept Name", "title": "Kept Title"}
+    assert db.one("SELECT name_key FROM people WHERE id=?", (a,))["name_key"]  # name now usable for matching
+    from app.providers.rocketreach import parse_profile
+    assert parse_profile({"name": "A B", "current_title": "CTO", "emails": [{"email": "a@x.com"}]}).matched_title == "CTO"

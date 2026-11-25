@@ -25,6 +25,7 @@ class ProviderResult:
     error: str | None = None
     matched_name: str | None = None      # who the provider says this profile is (for the wrong-person check)
     matched_employer: str | None = None
+    matched_title: str | None = None     # job title the provider reports (fills a blank title only)
     shape: str | None = None        # field names/types of the raw response, never values
 
 

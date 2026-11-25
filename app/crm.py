@@ -253,7 +253,7 @@ def board(db: Database, campaign_id: int | None = None, owner: str | None = None
     for st in STAGES:
         total = db.one(f"SELECT COUNT(*) AS n {base} AND c.stage=?", p + [st])["n"]
         items = db.query(
-            "SELECT p.id AS person_id, p.full_name, p.title, p.do_not_contact, co.name AS company_name, p.email, c.owner_email, c.next_action_at, c.stage_changed_at, "
+            "SELECT p.id AS person_id, p.full_name, p.linkedin_url, p.title, p.do_not_contact, co.name AS company_name, p.email, c.owner_email, c.next_action_at, c.stage_changed_at, "
             "(SELECT cp.verification FROM contact_points cp WHERE cp.person_id = p.id AND cp.kind='email' AND cp.is_primary=1 LIMIT 1) AS email_status, "
             "(SELECT COUNT(*) FROM tasks t WHERE t.person_id = p.id AND t.done_at IS NULL) AS open_tasks, "
             "(SELECT MAX(e.created_at) FROM lead_events e WHERE e.person_id = p.id) AS last_activity "

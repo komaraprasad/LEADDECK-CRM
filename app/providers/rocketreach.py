@@ -32,6 +32,7 @@ def parse_profile(p: dict) -> ProviderResult:
     r = _parse(p)
     r.matched_name = (p.get("name") or None) if isinstance(p.get("name"), str) else None
     r.matched_employer = (p.get("current_employer") or None) if isinstance(p.get("current_employer"), str) else None
+    r.matched_title = (p.get("current_title") or None) if isinstance(p.get("current_title"), str) else None
     import json
     r.shape = json.dumps(shape_of(p), sort_keys=True)[:2000]
     return r

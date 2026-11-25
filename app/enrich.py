@@ -139,6 +139,15 @@ def repick_primary_emails(db: Database) -> list[int]:
 
 def _store(db: Database, person: dict, provider: Provider, res: ProviderResult) -> None:
     ts = now_iso()
+    # a lead a tool gave only as a profile link (no name/title): take them from the matched profile, blanks only
+    cur = db.one("SELECT full_name, title FROM people WHERE id=?", (person["id"],))
+    fill = {}
+    if not (cur["full_name"] or "").strip() and (res.matched_name or "").strip():
+        fill.update(full_name=res.matched_name.strip(), name_key=normalize_name(res.matched_name) or None)
+    if not (cur["title"] or "").strip() and (getattr(res, "matched_title", None) or "").strip():
+        fill["title"] = res.matched_title.strip()
+    if fill:
+        db.update("people", person["id"], fill)
     for kind, vals in (("email", res.emails), ("phone", res.phones), ("company_phone", res.company_phones)):
         for v in vals:
             row = db.one("SELECT * FROM contact_points WHERE person_id=? AND kind=? AND value=?", (person["id"], kind, v.value))
