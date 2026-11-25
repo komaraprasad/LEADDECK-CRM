@@ -30,7 +30,7 @@ def ok(email="a@x.com", v="valid", phone=None):
 
 # ---- schema
 def test_schema_v2_tables_and_columns(db):
-    names = {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")}
+    names = db.table_names()
     assert {"contact_points", "enrichment_runs", "enrichment_items", "credit_ledger", "erasures"} <= names
     pid = mkperson(db, "A", "u1")
     assert db.one("SELECT do_not_contact FROM people WHERE id=?", (pid,))["do_not_contact"] == 0

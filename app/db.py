@@ -72,10 +72,16 @@ class Database:
         rows = self.query(sql, params)
         return rows[0] if rows else None
 
-    def insert(self, table: str, values: dict) -> int:
+    # tables keyed by something other than an `id` column: insert() returns None for them on both dialects
+    _NO_ID_TABLES = frozenset({"campaign_leads", "erasures", "schema_version"})
+
+    def insert(self, table: str, values: dict) -> int | None:
         cols = list(values)
         sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})"
         with self._lock:
+            if table in self._NO_ID_TABLES:
+                self._run(sql, list(values.values()))
+                return None
             if self.dialect == "postgres":
                 return self._run(sql + " RETURNING id", list(values.values())).fetchone()["id"]
             return self._run(sql, list(values.values())).lastrowid
@@ -124,6 +130,13 @@ class Database:
                 for s in stmts:
                     self._run(s.replace("{PK}", pk))
                 self._run("INSERT INTO schema_version (version) VALUES (%d)" % i)
+
+    def table_names(self) -> set[str]:
+        if self.dialect == "sqlite":
+            rows = self.query("SELECT name FROM sqlite_master WHERE type='table'")
+        else:
+            rows = self.query("SELECT table_name AS name FROM information_schema.tables WHERE table_schema = current_schema()")
+        return {r["name"] for r in rows}
 
     def size_bytes(self) -> int | None:
         try:

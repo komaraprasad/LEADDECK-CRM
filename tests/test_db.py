@@ -3,7 +3,7 @@ from app.db import Database
 
 
 def test_schema_creates_all_tables_and_is_rerunnable(db):
-    names = {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")}
+    names = db.table_names()
     assert {"companies", "people", "lead_sources", "job_postings", "campaigns", "campaign_leads", "sync_runs", "users", "schema_version"} <= names
     db.init_schema()  # second run applies nothing, raises nothing
     from app.schema import MIGRATIONS
