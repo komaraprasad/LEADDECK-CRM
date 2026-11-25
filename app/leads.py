@@ -89,7 +89,11 @@ def _where(f: dict):
 
 _SELECT = ("SELECT p.id, p.full_name, p.headline, p.title, p.location, p.linkedin_url, p.email, p.phone, p.lead_type, "
            "p.match_confidence, p.do_not_contact, p.first_seen, p.last_seen, c.name AS company_name, c.linkedin_url AS company_url, "
-           f"{_STAGE_SQL} AS stage, cl.owner_email AS owner, {SCORE_SQL} AS score {_FROM}")
+           f"{_STAGE_SQL} AS stage, cl.owner_email AS owner, {SCORE_SQL} AS score, "
+           # an enrichment provider already answered for this lead (found, not found or wrong person)
+           "CASE WHEN EXISTS (SELECT 1 FROM enrichment_items ei WHERE ei.person_id = p.id "
+           "AND ei.status IN ('matched','not_found','mismatch')) THEN 1 ELSE 0 END AS looked_up "
+           f"{_FROM}")
 
 
 def _attach_tools(db: Database, rows: list[dict]) -> list[dict]:

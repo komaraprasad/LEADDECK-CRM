@@ -49,7 +49,9 @@ const LD = (() => {
   const avatarFor = (name, size) => el('span', { class: 'av' + (size ? ' ' + size : ''), style: '--h:' + hueOf(name), 'aria-hidden': 'true' }, String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?');
   const bandOf = score => score >= 50 ? 'high' : score >= 20 ? 'medium' : 'low';
   // score 0 = no email, no phone, found by one tool: say so instead of a "0" ring that looks broken
-  const notEnriched = () => el('span', { class: 'tag noinfo', title: 'No email or phone yet. Enrich this lead (Campaigns → Enrich) to find contact details and a quality score.' }, 'Not enriched');
+  const notEnriched = lead => lead && lead.looked_up
+    ? el('span', { class: 'tag noinfo', title: 'Enrichment already looked this lead up and found no email or phone. Re-checking would spend credits again.' }, 'No contact found')
+    : el('span', { class: 'tag noinfo', title: 'No email or phone yet. Enrich this lead (Campaigns → Enrich) to find contact details and a quality score.' }, 'Not enriched');
   const ringFor = (score, size) => { const band = bandOf(score || 0);
     return el('span', { class: 'ring ' + band + (size ? ' ' + size : '') + (score ? '' : ' zero'), style: '--v:' + (score || 0), title: 'Contact score ' + (score || 0) + '/100' },
       svg({ viewBox: '0 0 36 36' }, sv('circle', { class: 'bg', cx: 18, cy: 18, r: 15.9155, pathLength: 100 }), sv('circle', { class: 'fg', cx: 18, cy: 18, r: 15.9155, pathLength: 100 })), el('b', {}, String(score || 0))); };
@@ -206,7 +208,7 @@ const LD = (() => {
       el('button', { class: 'ghost', onclick: clearSel, 'aria-label': 'Clear selection' }, 'Clear'));
     const updSel = () => { const n = st.selected.size; selCount.textContent = n ? n + ' selected' : ''; barCount.textContent = String(n); bulkBar.hidden = !n; };
     const phoneCell = r => r.phone ? r.phone : (r.company_phone ? el('span', { class: 'mut', title: 'Company switchboard, not a direct line' }, 'company: ' + r.company_phone) : '');
-    const qualityTag = r => !r.score ? notEnriched() : el('span', { class: 'qcell', title: 'Contact score ' + r.score + '/100 — verified email 50, other email 20, direct phone 35, company phone 10, found by 2+ tools 15' }, ringFor(r.score), QUALITY_LABEL[r.quality]);
+    const qualityTag = r => !r.score ? notEnriched(r) : el('span', { class: 'qcell', title: 'Contact score ' + r.score + '/100 — verified email 50, other email 20, direct phone 35, company phone 10, found by 2+ tools 15' }, ringFor(r.score), QUALITY_LABEL[r.quality]);
 
     async function load() {
       const my = ++st.seq;
@@ -529,7 +531,7 @@ const LD = (() => {
       body.replaceChildren(...[
         el('div', { class: 'head' }, avatarFor(d.full_name, 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, d.full_name || 'Unnamed'), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
           d.linkedin_url ? el('a', { class: 'lnk', href: d.linkedin_url, target: '_blank', rel: 'noopener noreferrer' }, 'LinkedIn profile ↗') : null),
-          d.score ? ringFor(d.score, 'lg') : notEnriched(), el('button', { class: 'ghost', onclick: close, 'aria-label': 'Close' }, '✕')),
+          d.score ? ringFor(d.score, 'lg') : notEnriched(d), el('button', { class: 'ghost', onclick: close, 'aria-label': 'Close' }, '✕')),
         d.do_not_contact ? el('div', { class: 'msg err' }, 'Do not contact' + (d.dnc_reason ? ' — ' + d.dnc_reason : '')) : null,
         el('div', { class: 'row', style: 'margin:12px 0' }, el('label', {}, 'Stage ', stageSel), el('label', {}, 'Owner ', ownerSel)),
         d.crm.stage === 'lost' || d.crm.stage === 'not_a_fit' ? el('div', { class: 'mut' }, 'Reason: ' + (d.crm.lost_reason || '—')) : null,

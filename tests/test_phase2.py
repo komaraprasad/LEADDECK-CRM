@@ -413,3 +413,14 @@ def test_mismatch_is_charged_not_saved_and_reported(db):
 def test_rocketreach_profile_carries_name_and_employer():
     r = parse_profile({"name": "A B", "current_employer": "Acme", "emails": [{"email": "a@x.com"}]})
     assert (r.matched_name, r.matched_employer) == ("A B", "Acme")
+
+
+def test_leads_report_whether_enrichment_already_looked_them_up(db):
+    from app.leads import list_leads, get_lead
+    a = mkperson(db, "Never Looked", "u1", "Acme")
+    b = mkperson(db, "Looked Nothing", "u2", "Acme")
+    E.run_enrichment(db, FakeProvider({b: ProviderResult("not_found")}), mkcamp(db, [b]), 5, 5)
+    rows = {r["id"]: r for r in list_leads(db, {})["items"]}
+    assert not rows[a]["looked_up"] and rows[a]["score"] == 0
+    assert rows[b]["looked_up"] and rows[b]["score"] == 0
+    assert get_lead(db, b)["looked_up"] and not get_lead(db, a)["looked_up"]
