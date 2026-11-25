@@ -520,7 +520,7 @@ const LD = (() => {
       const KIND_ICON = { email: '✉', phone: '☎', company_phone: '🏢' };
       const cpRow = c => el('div', { class: 'cp' + (c.verification === 'invalid' ? ' bad' : '') },
         el('span', { class: 'cp-k', title: c.kind.replace('_', ' ') }, KIND_ICON[c.kind] || '•'),
-        el('div', { class: 'cp-v' }, el('div', {}, c.value, c.is_primary ? el('span', { class: 'star', title: 'Primary' }, ' ★') : null), el('div', { class: 'mut' }, c.kind.replace('_', ' ') + ' · ' + c.provider)),
+        el('div', { class: 'cp-v' }, el('div', {}, c.value, c.is_primary ? el('span', { class: 'star', title: 'Primary' }, ' ★') : null), el('div', { class: 'mut' }, c.kind.replace('_', ' ') + (c.line_type ? ' (' + c.line_type + ')' : '') + (c.provider_grade ? ' · grade ' + c.provider_grade : '') + ' · ' + c.provider)),
         el('span', { class: 'tag ' + (c.verification === 'valid' ? 'cand' : c.verification === 'invalid' ? 'bad' : '') }, c.verification),
         c.verification !== 'invalid' ? el('button', { class: 'ghost small', 'aria-label': 'Copy ' + c.value, onclick: async e => { try { await navigator.clipboard.writeText(c.value); e.currentTarget.textContent = 'Copied'; } catch (er) { toast('Could not copy', false); } } }, 'Copy') : null);
       const goodCp = d.contact_points.filter(c => c.verification !== 'invalid'), badCp = d.contact_points.filter(c => c.verification === 'invalid');

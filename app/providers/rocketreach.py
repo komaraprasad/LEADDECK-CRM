@@ -37,6 +37,22 @@ def parse_profile(p: dict) -> ProviderResult:
     return r
 
 
+def _phone_verification(d: dict) -> str:
+    """RocketReach phone `grade` (A confirmed, A- likely, B possible) replaced the deprecated `validity`."""
+    g = str(d.get("grade") or "").strip().upper()
+    if g in ("A", "A-"):
+        return "valid"
+    if g == "B":
+        return "unknown"
+    v = str(d.get("validity") or "").lower()
+    return "valid" if v == "valid" else "invalid" if v == "invalid" else "unverified"
+
+
+def _line_type(t) -> str | None:
+    t = str(t or "").strip().lower()
+    return t or None
+
+
 def _parse(p: dict) -> ProviderResult:
     emails, phones = [], []
     for e in p.get("emails") or []:
@@ -50,7 +66,8 @@ def _parse(p: dict) -> ProviderResult:
         num = (ph.get("number") if isinstance(ph, dict) else ph) or ""
         num = str(num).strip()
         if num:
-            phones.append(ContactValue(num, "unverified", None))
+            d = ph if isinstance(ph, dict) else {}
+            phones.append(ContactValue(num, _phone_verification(d), d.get("grade"), _line_type(d.get("type"))))
     if not phones:  # tolerate scalar fields some response variants use (unverified assumption)
         for k in ("current_work_phone", "phone", "mobile_phone"):
             if isinstance(p.get(k), str) and p[k].strip():
@@ -59,18 +76,27 @@ def _parse(p: dict) -> ProviderResult:
     company = []
     cp = p.get("current_employer_phone")
     if isinstance(cp, dict) and str(cp.get("number") or "").strip():
+        # documented as the employer's office line, never a direct line to the person
         company.append(ContactValue(str(cp["number"]).strip(), "valid" if str(cp.get("validity", "")).lower() == "valid" else "unverified",
-                                    cp.get("grade")))
+                                    cp.get("grade"), "office"))
     if emails or phones or company:
         return ProviderResult("matched", emails, phones, company, credits_used=1)
     return ProviderResult("not_found")
 
 
+class _LookupTypeRefused(Exception):
+    """The plan does not allow the requested lookup_type (HTTP 400/403 while it was set)."""
+
+
 class RocketReach(Provider):
     name = "rocketreach"
 
-    def __init__(self, api_key: str, http=None, sleep=time.sleep, max_wait: int = 60, poll: float = 3.0):
+    def __init__(self, api_key: str, http=None, sleep=time.sleep, max_wait: int = 60, poll: float = 3.0, lookup_type: str = "premium"):
         self._key, self._http, self._sleep, self.max_wait, self.poll = (api_key or "").strip(), http or _get, sleep, max_wait, poll
+        # The default lookup can leave out phone numbers the RocketReach website shows; "premium" asks for the full
+        # profile. Set ROCKETREACH_LOOKUP_TYPE (e.g. "phone", or "" for RocketReach's default) to change it.
+        self.lookup_type = (lookup_type or "").strip()
+        self.notice = ""  # set when the plan refused the lookup type and we fell back
 
     def configured(self):
         return bool(self._key)
@@ -82,6 +108,8 @@ class RocketReach(Provider):
             status, text = self._http(f"{BASE}{path}?{urlencode(params)}", {"Api-Key": self._key})
         except Exception as e:  # never echo the exception text: it may contain the URL/headers
             raise ProviderError("RocketReach request failed (%s)" % type(e).__name__)
+        if status in (400, 403) and "lookup_type" in params:
+            raise _LookupTypeRefused()
         if status in (401, 403):
             raise ProviderError("RocketReach rejected the API key or plan (HTTP %d). Check that your plan includes API access." % status)
         if status == 429:
@@ -101,7 +129,16 @@ class RocketReach(Provider):
             params = {"name": person["full_name"], "current_employer": person["company_name"]}
         else:
             return ProviderResult("error", error="no LinkedIn URL or name+company to match on")
-        data = self._call("/person/lookup", params)
+        if self.lookup_type:
+            try:
+                data = self._call("/person/lookup", {**params, "lookup_type": self.lookup_type})
+            except _LookupTypeRefused:
+                self.notice = (f"RocketReach refused lookup_type '{self.lookup_type}' on this plan; used its default lookup "
+                               "(phones may be missing). Check the plan or set ROCKETREACH_LOOKUP_TYPE.")
+                self.lookup_type = ""  # remember for the rest of the run: one wasted call, not one per lead
+                data = self._call("/person/lookup", params)
+        else:
+            data = self._call("/person/lookup", params)
         waited = 0.0
         while str(data.get("status", "complete")).lower() in ("searching", "waiting", "progress", "not_queued") and data.get("id"):
             if waited >= self.max_wait:

@@ -27,6 +27,7 @@ class Settings:
     testing: bool = False
     tool_urls: dict = field(default_factory=lambda: dict(DEFAULT_TOOL_URLS))
     rocketreach_api_key: str = ""
+    rocketreach_lookup_type: str = "premium"
     enrich_credit_cap: int = 25
     enrich_lead_cap: int = 10
     crm_event_token: str = ""
@@ -66,6 +67,7 @@ def get_settings(env=None) -> Settings:
         secure_cookies=bool(env.get("RENDER") or env.get("SECURE_COOKIES")),
         tool_urls=urls,
         rocketreach_api_key=env.get("ROCKETREACH_API_KEY", "").strip(),
+        rocketreach_lookup_type=env.get("ROCKETREACH_LOOKUP_TYPE", "premium").strip(),
         enrich_credit_cap=_int(env.get("ENRICH_DEFAULT_CREDIT_CAP"), 25),
         enrich_lead_cap=_int(env.get("ENRICH_DEFAULT_LEAD_CAP"), 10),
         crm_event_token=env.get("CRM_EVENT_TOKEN", "").strip(),

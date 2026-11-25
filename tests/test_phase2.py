@@ -424,3 +424,33 @@ def test_leads_report_whether_enrichment_already_looked_them_up(db):
     assert not rows[a]["looked_up"] and rows[a]["score"] == 0
     assert rows[b]["looked_up"] and rows[b]["score"] == 0
     assert get_lead(db, b)["looked_up"] and not get_lead(db, a)["looked_up"]
+
+
+# ---- full RocketReach contact data (phones need more than the default lookup)
+def test_lookup_asks_for_premium_lookup_type_by_default():
+    p, seen = rr([(200, json.dumps({"id": 1, "status": "complete", "emails": [{"email": "a@x.com", "smtp_valid": "valid"}]}))])
+    p.lookup({"linkedin_url": "https://www.linkedin.com/in/a"})
+    assert "lookup_type=premium" in seen[0][0]
+
+
+def test_lookup_type_not_allowed_on_plan_falls_back_to_default_once():
+    p, seen = rr([(403, "{}"), (200, json.dumps({"id": 1, "status": "complete", "emails": [{"email": "a@x.com", "smtp_valid": "valid"}]})),
+                  (200, json.dumps({"id": 2, "status": "complete", "emails": [{"email": "b@x.com", "smtp_valid": "valid"}]}))])
+    assert p.lookup({"linkedin_url": "u1"}).status == "matched"
+    assert "lookup_type" in seen[0][0] and "lookup_type" not in seen[1][0]
+    p.lookup({"linkedin_url": "u2"})
+    assert "lookup_type" not in seen[2][0]  # remembered: no wasted call per lead
+    assert "premium" in p.notice
+
+
+def test_phone_grade_and_line_type_are_kept(db):
+    prof = {"emails": [], "phones": [{"number": "+91 98", "grade": "A", "type": "mobile"}, {"number": "+91 97", "grade": "B", "type": "direct dial"}],
+            "current_employer_phone": {"number": "+63 88", "grade": "B", "type": "other"}}
+    r = parse_profile(prof)
+    assert [(c.value, c.verification, c.grade, c.line_type) for c in r.phones] == [("+91 98", "valid", "A", "mobile"), ("+91 97", "unknown", "B", "direct dial")]
+    assert r.company_phones[0].line_type == "office"
+    a = mkperson(db, "A", "u1")
+    E.run_enrichment(db, FakeProvider({a: r}), mkcamp(db, [a]), 5, 5)
+    rows = db.query("SELECT value, line_type, is_primary FROM contact_points WHERE person_id=? AND kind='phone' ORDER BY value", (a,))
+    assert rows == [{"value": "+91 97", "line_type": "direct dial", "is_primary": 0}, {"value": "+91 98", "line_type": "mobile", "is_primary": 1}]
+    assert db.one("SELECT phone FROM people WHERE id=?", (a,))["phone"] == "+91 98"

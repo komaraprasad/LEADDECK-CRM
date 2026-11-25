@@ -54,4 +54,7 @@ MIGRATIONS = [
         "CREATE TABLE saved_views ({PK}, name TEXT NOT NULL, page TEXT NOT NULL, filters TEXT NOT NULL, owner_email TEXT NOT NULL, shared INTEGER NOT NULL DEFAULT 0, created_at TEXT)",
         "CREATE INDEX ix_saved_views_owner ON saved_views(owner_email, page)",
     ],
+    [  # version 7: phone line type from the provider (mobile / direct dial / office / other)
+        "ALTER TABLE contact_points ADD COLUMN line_type TEXT",
+    ],
 ]

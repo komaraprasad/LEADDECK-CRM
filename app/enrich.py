@@ -145,9 +145,13 @@ def _store(db: Database, person: dict, provider: Provider, res: ProviderResult) 
             if row is None:
                 db.insert("contact_points", {"person_id": person["id"], "kind": kind, "value": v.value, "provider": provider.name,
                                              "provider_grade": v.grade, "verification": v.verification,
-                                             "verified_at": ts if v.verification in ("valid", "invalid") else None, "found_at": ts})
-            elif _RANK.get(v.verification, 0) > _RANK.get(row["verification"], 0):
-                db.update("contact_points", row["id"], {"verification": v.verification, "provider_grade": v.grade, "verified_at": ts})
+                                             "verified_at": ts if v.verification in ("valid", "invalid") else None, "found_at": ts,
+                                             "line_type": getattr(v, "line_type", None)})
+            else:
+                if _RANK.get(v.verification, 0) > _RANK.get(row["verification"], 0):
+                    db.update("contact_points", row["id"], {"verification": v.verification, "provider_grade": v.grade, "verified_at": ts})
+                if getattr(v, "line_type", None) and not row.get("line_type"):
+                    db.update("contact_points", row["id"], {"line_type": v.line_type})
     dom = _company_domain(db, person["id"])
     for kind in ("email", "phone", "company_phone"):
         _pick_primary(db, person["id"], kind, dom)
@@ -202,7 +206,7 @@ def run_enrichment(db: Database, provider: Provider, cid: int, credit_cap: int, 
                                         "note": "credits counted by LeadDeck (1 per lookup that returned data); compare with your provider account",
                                         "created_at": now_iso()})
         db.update("enrichment_runs", run_id, {"status": status, "credits_used": used, "matched": matched, "not_found": not_found,
-                                              "errors": errors + mismatched, "finished": now_iso(), "note": note or (f"{mismatched} lookup(s) returned a different person and were not saved" if mismatched else None)})
+                                              "errors": errors + mismatched, "finished": now_iso(), "note": note or getattr(provider, "notice", "") or (f"{mismatched} lookup(s) returned a different person and were not saved" if mismatched else None)})
     return db.one("SELECT * FROM enrichment_runs WHERE id=?", (run_id,))
 
 

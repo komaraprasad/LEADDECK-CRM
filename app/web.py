@@ -58,7 +58,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None, htt
     db.init_schema()
     mark_stale_runs(db)
     db.execute("UPDATE enrichment_runs SET status='failed', note='interrupted by a restart', finished=? WHERE status='running'", (now_iso(),))
-    provider = provider or RocketReach(settings.rocketreach_api_key)
+    provider = provider or RocketReach(settings.rocketreach_api_key, lookup_type=settings.rocketreach_lookup_type)
     from app import crm as _crm
     _crm.backfill(db)
     enrich_lock = threading.Lock()

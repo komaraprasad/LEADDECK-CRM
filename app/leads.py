@@ -176,7 +176,7 @@ def get_lead(db: Database, pid: int) -> dict | None:
     if not row:
         return None
     row["tools"] = sorted({s["tool"] for s in db.query("SELECT tool FROM lead_sources WHERE person_id=?", (pid,))})
-    row["contact_points"] = db.query("SELECT kind, value, provider, provider_grade, verification, verified_at, is_primary, found_at FROM contact_points WHERE person_id=? ORDER BY kind, is_primary DESC, id", (pid,))
+    row["contact_points"] = db.query("SELECT kind, value, provider, provider_grade, line_type, verification, verified_at, is_primary, found_at FROM contact_points WHERE person_id=? ORDER BY kind, is_primary DESC, id", (pid,))
     row["sources"] = db.query("SELECT tool, kind, source_key, collected_at, synced_at FROM lead_sources WHERE person_id=? ORDER BY tool", (pid,))
     return row
 
