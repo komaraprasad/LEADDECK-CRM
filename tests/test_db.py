@@ -29,3 +29,15 @@ def test_transaction_rollback_and_savepoint(db):
                 db.insert("campaigns", {"name": "drop"})
                 raise RuntimeError("boom")
     assert [r["name"] for r in db.query("SELECT name FROM campaigns")] == ["keep"]
+
+
+def test_no_untyped_parameter_null_checks_in_sql():
+    """Postgres cannot type a bare parameter in '? IS NULL' ("could not determine data type of parameter"),
+    while SQLite accepts it. That once made 49 of 50 Hiring Badge leads fail on the live (Postgres) site."""
+    import pathlib, re
+    bad = []
+    for f in pathlib.Path("app").rglob("*.py"):
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\?\s+IS\s+(NOT\s+)?NULL", line, re.I):
+                bad.append(f"{f}:{n}")
+    assert bad == [], "decide NULL-ness of a parameter in Python, not in SQL: " + ", ".join(bad)

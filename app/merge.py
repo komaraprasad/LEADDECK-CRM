@@ -67,7 +67,10 @@ def _resolve_company(db: Database, name, url, website, industry, size, ts, has_t
         if row and curl and row["linkedin_url"] and row["linkedin_url"] != curl:
             row = None  # same site, different LinkedIn page: do not merge
     if row is None and nkey:
-        cand = db.one("SELECT * FROM companies WHERE name_key=? AND (linkedin_url IS NULL OR ? IS NULL) ORDER BY id LIMIT 1", (nkey, curl))
+        # with a LinkedIn URL, only match a company that has none yet (never one with a different page).
+        # Decided here in Python, not by a NULL test on a bare parameter in SQL: Postgres cannot type that parameter.
+        url_cond = " AND linkedin_url IS NULL" if curl else ""
+        cand = db.one(f"SELECT * FROM companies WHERE name_key=?{url_cond} ORDER BY id LIMIT 1", (nkey,))
         row = cand
     new = {"name": name, "name_key": nkey or None, "linkedin_url": curl, "domain": domain,
            "website": website.strip() if isinstance(website, str) and website.strip() else None,
