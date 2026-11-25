@@ -454,3 +454,14 @@ def test_phone_grade_and_line_type_are_kept(db):
     rows = db.query("SELECT value, line_type, is_primary FROM contact_points WHERE person_id=? AND kind='phone' ORDER BY value", (a,))
     assert rows == [{"value": "+91 97", "line_type": "direct dial", "is_primary": 0}, {"value": "+91 98", "line_type": "mobile", "is_primary": 1}]
     assert db.one("SELECT phone FROM people WHERE id=?", (a,))["phone"] == "+91 98"
+
+
+def test_company_industry_and_size_are_shown_and_exported(db):
+    from app.leads import list_leads, get_lead, export_rows
+    from app.exporter import EXPORT_COLUMNS
+    a = mkperson(db, "A", "u1", "Acme")
+    db.execute("UPDATE companies SET industry='Staffing & Recruiting', size='51-200'")
+    for row in (list_leads(db, {})["items"][0], get_lead(db, a), export_rows(db, ids=[a])[0]):
+        assert (row["company_industry"], row["company_size"]) == ("Staffing & Recruiting", "51-200")
+    labels = [label for _, label in EXPORT_COLUMNS]
+    assert labels.index("Company Industry") == labels.index("Company") + 1 and "Company Size" in labels

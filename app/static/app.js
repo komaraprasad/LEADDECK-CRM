@@ -530,6 +530,7 @@ const LD = (() => {
         el('div', { class: 'mut' }, (d.email ? 'Email from tools: ' + d.email + '. ' : '') + 'No enriched contacts yet. Run enrichment from the campaign page.');
       body.replaceChildren(...[
         el('div', { class: 'head' }, avatarFor(d.full_name, 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, d.full_name || 'Unnamed'), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
+          (d.company_industry || d.company_size) ? el('div', { class: 'mut', style: 'font-size:13px' }, [d.company_industry, d.company_size ? (/employee/i.test(d.company_size) ? d.company_size : d.company_size + ' employees') : null].filter(Boolean).join(' · ')) : null,
           d.linkedin_url ? el('a', { class: 'lnk', href: d.linkedin_url, target: '_blank', rel: 'noopener noreferrer' }, 'LinkedIn profile ↗') : null),
           d.score ? ringFor(d.score, 'lg') : notEnriched(d), el('button', { class: 'ghost', onclick: close, 'aria-label': 'Close' }, '✕')),
         d.do_not_contact ? el('div', { class: 'msg err' }, 'Do not contact' + (d.dnc_reason ? ' — ' + d.dnc_reason : '')) : null,

@@ -5,7 +5,7 @@ import io
 from openpyxl import Workbook
 
 EXPORT_COLUMNS = [
-    ("full_name", "Name"), ("title", "Title"), ("headline", "Headline"), ("company_name", "Company"),
+    ("full_name", "Name"), ("title", "Title"), ("headline", "Headline"), ("company_name", "Company"), ("company_industry", "Company Industry"), ("company_size", "Company Size"),
     ("location", "Location"), ("linkedin_url", "LinkedIn URL"), ("email", "Email"), ("email_status", "Email Status"), ("phone", "Phone"), ("company_phone", "Company Phone"),
     ("lead_type", "Lead Type"), ("do_not_contact_text", "Do Not Contact"), ("tools", "Found By"), ("last_seen", "Last Seen"),
 ]
