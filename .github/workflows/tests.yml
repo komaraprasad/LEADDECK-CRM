@@ -41,4 +41,7 @@ jobs:
       - name: Run tests on Postgres
         env:
           LEADDECK_TEST_PG_URL: postgresql://postgres:postgres@localhost:5432/postgres
-        run: python -m pytest -p no:cacheprovider -rf --tb=short --timeout 60 --durations=10 -v
+        run: python -m pytest -p no:cacheprovider -rf --tb=short --timeout 60 --durations=10 -v --junitxml=report.xml
+      - name: Publish failures as annotations
+        if: failure()
+        run: python scripts/ci_failures_to_annotations.py report.xml
