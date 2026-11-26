@@ -23,7 +23,9 @@ const LD = (() => {
   }
   function msg(box, text, ok) { box.replaceChildren(text ? el('div', { class: 'msg ' + (ok ? 'ok' : 'err') }, text) : ''); }
   // JobHarvest contacts have no location of their own: show the job's city, marked so it isn't mistaken for theirs
-  const jobLoc = r => r.job_location ? el('span', { title: 'Where the job they are hiring for is. Their own location is not known yet (enrich to get it).' }, r.job_location, el('span', { class: 'mut' }, ' · job')) : '';
+  const jobLoc = r => r.job_location ? el('div', { title: 'Where the job they are hiring for is. Their own location is not known yet (enrich to get it).' },
+    el('div', {}, r.job_location),
+    el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px' }, '💼 Job: ', r.hiring_for ? (r.job_url ? el('a', { class: 'lnk', href: r.job_url, target: '_blank', rel: 'noopener noreferrer', title: 'Open the job on LinkedIn' }, r.hiring_for + ' ↗') : r.hiring_for) : 'location')) : '';
   const typeTag = t => el('span', { class: 'tag ' + ({ candidate: 'cand', employer_contact: 'emp' }[t] || 'unk') }, (t || 'unknown').replace('_', ' '));
   const fmtBytes = n => n == null ? 'n/a' : n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
   const when = s => s ? s.replace('T', ' ').slice(0, 16) + ' UTC' : '—';
