@@ -503,7 +503,11 @@ def test_jobharvest_contact_shows_job_location(db):
     b = mkperson(db, "Own", "u9", "Acme"); db.update("people", b, {"location": "Chennai"})
     for pid in (a, b):
         db.insert("lead_sources", {"tool": "jobharvest", "kind": "person", "source_key": "jh:%d" % pid, "person_id": pid,
-                                   "raw_payload": '{"location": "Bengaluru, Karnataka, India"}', "collected_at": "2026-11-26T10:00:00+00:00"})
+                                   "raw_payload": '{"location": "Bengaluru, Karnataka, India", "job_title": "Java Developer", "job_url": "https://www.linkedin.com/jobs/view/1/"}',
+                                   "collected_at": "2026-11-26T10:00:00+00:00"})
+    row = {r["id"]: r for r in L.export_rows(db, ids=[a, b])}
+    assert (row[a]["display_name"], row[a]["name_source"], row[a]["hiring_for"], row[a]["job_url"]) == ("Roopna", "LinkedIn link", "Java Developer", "https://www.linkedin.com/jobs/view/1/")
+    assert (row[b]["display_name"], row[b]["name_source"], row[b]["hiring_for"]) == ("Own", "", "Java Developer")
     items = {r["id"]: r for r in L.list_leads(db, {})["items"]}
     assert items[a]["job_location"] == "Bengaluru, Karnataka, India" and not items[a]["location"]
     assert items[b]["job_location"] == "" and items[b]["location"] == "Chennai"   # own location wins

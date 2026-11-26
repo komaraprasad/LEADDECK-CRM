@@ -555,6 +555,7 @@ const LD = (() => {
       body.replaceChildren(...[
         el('div', { class: 'head' }, avatarFor(nameOf(d), 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, nameNode(d, 'Unnamed')), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
           d.location ? el('div', { class: 'mut', style: 'font-size:13px' }, '📍 ' + d.location) : d.job_location ? el('div', { class: 'mut', style: 'font-size:13px', title: 'Their own location is not known yet (enrich to get it)' }, '📍 ' + d.job_location + ' (job location)') : null,
+          d.hiring_for ? el('div', { class: 'mut', style: 'font-size:13px' }, '💼 Hiring for: ', d.job_url ? el('a', { class: 'lnk', href: d.job_url, target: '_blank', rel: 'noopener noreferrer' }, d.hiring_for + ' ↗') : d.hiring_for) : null,
           (d.company_industry || d.company_size) ? el('div', { class: 'mut', style: 'font-size:13px' }, [d.company_industry, d.company_size ? (/employee/i.test(d.company_size) ? d.company_size : d.company_size + ' employees') : null].filter(Boolean).join(' · ')) : null,
           d.linkedin_url ? el('a', { class: 'lnk', href: d.linkedin_url, target: '_blank', rel: 'noopener noreferrer' }, 'LinkedIn profile ↗') : null),
           d.score ? ringFor(d.score, 'lg') : notEnriched(d), el('button', { class: 'ghost', onclick: close, 'aria-label': 'Close' }, '✕')),

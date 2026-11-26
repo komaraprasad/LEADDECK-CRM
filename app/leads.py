@@ -40,29 +40,35 @@ def _display(r: dict) -> dict:
 
 
 def _job_locations(db: Database, rows: list[dict]) -> None:
-    """Leads with no location of their own that came from a job posting (JobHarvest hiring contacts):
-    show where that job is, as job_location. Display only; the person's own location stays blank."""
-    want = [r["id"] for r in rows if not (r.get("location") or "").strip()]
+    """Leads found on a job posting (JobHarvest hiring contacts): the job they are hiring for (hiring_for,
+    job_url) and, when the person has no location of their own, where that job is (job_location).
+    Display/export only; the person's own fields are never changed. Also name_source for exports."""
     for r in rows:
-        r.setdefault("job_location", "")
-    if not want:
+        r.setdefault("job_location", ""); r.setdefault("hiring_for", ""); r.setdefault("job_url", "")
+        r["name_source"] = "LinkedIn link" if r.get("name_from_url") else ""
+    ids = [r["id"] for r in rows]
+    if not ids:
         return
-    ph = ",".join("?" for _ in want)
-    found: dict[int, str] = {}
+    ph = ",".join("?" for _ in ids)
+    found: dict[int, dict] = {}
     for s in db.query(f"SELECT person_id, raw_payload FROM lead_sources WHERE tool='jobharvest' AND kind='person' "
-                      f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", want):
+                      f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", ids):
         if s["person_id"] in found:
-            continue
+            continue   # newest posting wins
         try:
             raw = json.loads(s["raw_payload"] or "{}")
         except (TypeError, ValueError):
             continue
-        loc = raw.get("location") if isinstance(raw, dict) else None
-        if isinstance(loc, str) and loc.strip():
-            found[s["person_id"]] = loc.strip()
+        if isinstance(raw, dict):
+            txt = lambda *ks: next((raw[k].strip() for k in ks if isinstance(raw.get(k), str) and raw[k].strip()), "")
+            found[s["person_id"]] = {"loc": txt("location", "Location"), "title": txt("job_title", "title", "Job Title"),
+                                     "url": txt("job_url", "Job URL", "url")}
     for r in rows:
-        if r["id"] in found:
-            r["job_location"] = found[r["id"]]
+        j = found.get(r["id"])
+        if j:
+            r["hiring_for"], r["job_url"] = j["title"], j["url"]
+            if not (r.get("location") or "").strip():
+                r["job_location"] = j["loc"]
 
 
 def quality_band(score: int) -> str:

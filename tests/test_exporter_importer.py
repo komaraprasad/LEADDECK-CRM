@@ -7,7 +7,8 @@ from app.importer import parse_export_file
 def test_formula_neutralized_csv_and_xlsx():
     rows = [{"full_name": "=HYPERLINK(\"http://x\",\"y\")", "headline": "+1+1", "title": "-2", "company_name": "@SUM(A1)", "email": "a@b.co"}]
     got = list(csv.reader(io.StringIO(build_csv(rows).decode("utf-8-sig"))))
-    assert got[1][0].startswith("'=") and got[1][1] == "'-2" and got[1][2] == "'+1+1" and got[1][3] == "'@SUM(A1)"
+    c = {h: v for h, v in zip(got[0], got[1])}
+    assert c["Name"].startswith("'=") and c["Title"] == "'-2" and c["Headline"] == "'+1+1" and c["Company"] == "'@SUM(A1)"
     ws = load_workbook(io.BytesIO(build_xlsx(rows))).active
     assert str(ws["A2"].value).startswith("'=") and ws["A2"].data_type == "s"
 
@@ -15,7 +16,8 @@ def test_formula_neutralized_csv_and_xlsx():
 def test_csv_roundtrip_commas_quotes_unicode():
     rows = [{"full_name": 'Ñúñez, "José"', "company_name": "Acme, Inc."}]
     got = list(csv.reader(io.StringIO(build_csv(rows).decode("utf-8-sig"))))
-    assert got[1][0] == 'Ñúñez, "José"' and got[1][3] == "Acme, Inc."
+    c = {h: v for h, v in zip(got[0], got[1])}
+    assert c["Name"] == 'Ñúñez, "José"' and c["Company"] == "Acme, Inc."
 
 
 def test_safe_cell_none_and_plain():
