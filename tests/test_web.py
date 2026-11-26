@@ -164,3 +164,14 @@ def test_healthz_reports_deployed_version(app, monkeypatch):
     assert app.test_client().get("/healthz").get_json() == {"ok": True, "version": "a22e081"}
     monkeypatch.delenv("RENDER_GIT_COMMIT")
     assert app.test_client().get("/healthz").get_json() == {"ok": True, "version": "local"}
+
+
+def test_on_render_a_missing_database_url_stops_startup(monkeypatch):
+    monkeypatch.setenv("RENDER", "true")
+    good_key = "x" * 40
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        create_app(Settings(secret_key=good_key, database_url="sqlite:///leaddeck.db"), Database("sqlite:///:memory:"))
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        create_app(Settings(secret_key=good_key, database_url=""), Database("sqlite:///:memory:"))
+    monkeypatch.delenv("RENDER")
+    create_app(Settings(secret_key=good_key, database_url="sqlite:///leaddeck.db"), Database("sqlite:///:memory:"))  # laptop: fine

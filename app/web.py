@@ -52,6 +52,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None, htt
     weak = (not settings.secret_key) or settings.secret_key.lower().startswith("change-me")
     if weak and not settings.testing:
         raise RuntimeError("SECRET_KEY is not set (or is the placeholder). Set a long random SECRET_KEY before starting.")
+    # On Render (it sets RENDER=true) the disk is wiped on every restart: a missing DATABASE_URL must stop the
+    # deploy, not silently fall back to a throwaway SQLite file (that once lost the login and every sync).
+    if os.environ.get("RENDER") and not settings.testing and not str(settings.database_url).strip().startswith(("postgres://", "postgresql")):
+        raise RuntimeError("DATABASE_URL is not set to a Postgres database. On Render, set DATABASE_URL (your Neon connection string) "
+                           "in the service's Environment settings; a local SQLite file would be wiped on every restart.")
     http_get = http_get or default_http_get
     health_fn = health_fn or check_tool_health
     if db is None:
