@@ -596,7 +596,7 @@ const LD = (() => {
               it.next_action_at ? el('span', { class: 'tag ' + (it.next_action_at.slice(0, 10) < today ? 'bad' : '') }, fmtDue(it.next_action_at, today)) : null, initials(it.owner_email)));
           card.addEventListener('click', () => openDrawer(it.person_id, load));
           card.addEventListener('keydown', e => { if (e.key === 'Enter') openDrawer(it.person_id, load); });
-          card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', String(it.person_id)); card.classList.add('drag'); });
+          card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', it.person_id + '|' + st); card.classList.add('drag'); });
           card.addEventListener('dragend', () => card.classList.remove('drag'));
           return card;
         }), col.count > col.items.length && !staleOnly.checked ? el('div', { class: 'mut', style: 'padding:6px' }, '+' + (col.count - col.items.length) + ' more (use search or filters)') : null,
@@ -604,7 +604,7 @@ const LD = (() => {
         const colEl = el('section', { class: 'col stage-' + st, 'aria-label': col.label }, el('header', {}, el('span', {}, col.label), el('span', { class: 'count' }, col.count)), body);
         colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.classList.add('over'); });
         colEl.addEventListener('dragleave', () => colEl.classList.remove('over'));
-        colEl.addEventListener('drop', async e => { e.preventDefault(); colEl.classList.remove('over'); const pid = +e.dataTransfer.getData('text/plain'); if (pid && await changeStage(pid, st)) { toast('Moved to ' + col.label); landed = pid; } load(); });
+        colEl.addEventListener('drop', async e => { e.preventDefault(); colEl.classList.remove('over'); const [p0, from] = e.dataTransfer.getData('text/plain').split('|'), pid = +p0; if (!pid || from === st) return; if (await changeStage(pid, st)) { toast('Moved to ' + col.label); landed = pid; } load(); });
         return colEl;
       }));
       const nStale = Object.values(d.columns).reduce((n, c) => n + c.items.filter(i => i.stale).length, 0);
