@@ -22,6 +22,8 @@ const LD = (() => {
     return data;
   }
   function msg(box, text, ok) { box.replaceChildren(text ? el('div', { class: 'msg ' + (ok ? 'ok' : 'err') }, text) : ''); }
+  // JobHarvest contacts have no location of their own: show the job's city, marked so it isn't mistaken for theirs
+  const jobLoc = r => r.job_location ? el('span', { title: 'Where the job they are hiring for is. Their own location is not known yet (enrich to get it).' }, r.job_location, el('span', { class: 'mut' }, ' · job')) : '';
   const typeTag = t => el('span', { class: 'tag ' + ({ candidate: 'cand', employer_contact: 'emp' }[t] || 'unk') }, (t || 'unknown').replace('_', ' '));
   const fmtBytes = n => n == null ? 'n/a' : n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
   const when = s => s ? s.replace('T', ' ').slice(0, 16) + ' UTC' : '—';
@@ -234,7 +236,7 @@ const LD = (() => {
             r.linkedin_url ? el('a', { class: 'lnk ext', href: r.linkedin_url, target: '_blank', rel: 'noopener noreferrer', title: 'Open LinkedIn profile', 'aria-label': 'LinkedIn profile of ' + (nameOf(r) || 'lead') }, ' ↗') : null,
             r.match_confidence === 'low' ? el('span', { class: 'tag bad', title: 'No profile URL: matched by name and company' }, 'low match') : null,
             r.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null))),
-          el('td', {}, r.title || r.headline || ''), el('td', {}, r.company_name || ''), el('td', {}, r.location || ''),
+          el('td', {}, r.title || r.headline || ''), el('td', {}, r.company_name || ''), el('td', {}, r.location || jobLoc(r)),
           el('td', { class: 'nw' }, r.email || '', r.email_status === 'valid' ? el('span', { class: 'tag cand', title: 'Verified by the enrichment provider' }, 'verified') : null), el('td', { class: 'nw' }, phoneCell(r)),
           el('td', {}, qualityTag(r)), el('td', { class: 'nw' }, stagePill(r.stage), r.owner ? initials(r.owner) : null),
           el('td', { class: 'mut nw' }, (r.last_seen || '').slice(0, 10)), el('td', {}, r.tools.map(t => el('span', { class: 'tag' }, TOOL_LABEL[t] || t))))) :
@@ -552,6 +554,7 @@ const LD = (() => {
         el('div', { class: 'mut' }, (d.email ? 'Email from tools: ' + d.email + '. ' : '') + 'No enriched contacts yet. Run enrichment from the campaign page.');
       body.replaceChildren(...[
         el('div', { class: 'head' }, avatarFor(nameOf(d), 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, nameNode(d, 'Unnamed')), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
+          d.location ? el('div', { class: 'mut', style: 'font-size:13px' }, '📍 ' + d.location) : d.job_location ? el('div', { class: 'mut', style: 'font-size:13px', title: 'Their own location is not known yet (enrich to get it)' }, '📍 ' + d.job_location + ' (job location)') : null,
           (d.company_industry || d.company_size) ? el('div', { class: 'mut', style: 'font-size:13px' }, [d.company_industry, d.company_size ? (/employee/i.test(d.company_size) ? d.company_size : d.company_size + ' employees') : null].filter(Boolean).join(' · ')) : null,
           d.linkedin_url ? el('a', { class: 'lnk', href: d.linkedin_url, target: '_blank', rel: 'noopener noreferrer' }, 'LinkedIn profile ↗') : null),
           d.score ? ringFor(d.score, 'lg') : notEnriched(d), el('button', { class: 'ghost', onclick: close, 'aria-label': 'Close' }, '✕')),

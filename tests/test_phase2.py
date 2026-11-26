@@ -497,6 +497,19 @@ def test_enrichment_fills_blank_name_and_title_only(db):
     assert parse_profile({"name": "A B", "current_title": "CTO", "emails": [{"email": "a@x.com"}]}).matched_title == "CTO"
 
 
+def test_jobharvest_contact_shows_job_location(db):
+    from app import leads as L
+    a = mkperson(db, None, "https://www.linkedin.com/in/roopna", "Moneyview")
+    b = mkperson(db, "Own", "u9", "Acme"); db.update("people", b, {"location": "Chennai"})
+    for pid in (a, b):
+        db.insert("lead_sources", {"tool": "jobharvest", "kind": "person", "source_key": "jh:%d" % pid, "person_id": pid,
+                                   "raw_payload": '{"location": "Bengaluru, Karnataka, India"}', "collected_at": "2026-11-26T10:00:00+00:00"})
+    items = {r["id"]: r for r in L.list_leads(db, {})["items"]}
+    assert items[a]["job_location"] == "Bengaluru, Karnataka, India" and not items[a]["location"]
+    assert items[b]["job_location"] == "" and items[b]["location"] == "Chennai"   # own location wins
+    assert L.get_lead(db, a)["job_location"] == "Bengaluru, Karnataka, India"
+
+
 def test_enrichment_fills_blank_location_only(db):
     from app.providers.rocketreach import parse_profile
     assert parse_profile({"name": "A", "location": "Bengaluru, Karnataka, India"}).matched_location == "Bengaluru, Karnataka, India"

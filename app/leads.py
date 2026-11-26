@@ -1,5 +1,6 @@
 """Lead listing, filtering, export rows and campaigns (shared filter logic)."""
 from __future__ import annotations
+import json
 from app.db import Database, now_iso
 
 LEAD_TYPES = ("candidate", "employer_contact", "unknown")
@@ -36,6 +37,32 @@ def _display(r: dict) -> dict:
     r["display_name"] = r.get("full_name") or guess
     r["name_from_url"] = bool(guess)
     return r
+
+
+def _job_locations(db: Database, rows: list[dict]) -> None:
+    """Leads with no location of their own that came from a job posting (JobHarvest hiring contacts):
+    show where that job is, as job_location. Display only; the person's own location stays blank."""
+    want = [r["id"] for r in rows if not (r.get("location") or "").strip()]
+    for r in rows:
+        r.setdefault("job_location", "")
+    if not want:
+        return
+    ph = ",".join("?" for _ in want)
+    found: dict[int, str] = {}
+    for s in db.query(f"SELECT person_id, raw_payload FROM lead_sources WHERE tool='jobharvest' AND kind='person' "
+                      f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", want):
+        if s["person_id"] in found:
+            continue
+        try:
+            raw = json.loads(s["raw_payload"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        loc = raw.get("location") if isinstance(raw, dict) else None
+        if isinstance(loc, str) and loc.strip():
+            found[s["person_id"]] = loc.strip()
+    for r in rows:
+        if r["id"] in found:
+            r["job_location"] = found[r["id"]]
 
 
 def quality_band(score: int) -> str:
@@ -136,6 +163,7 @@ def _attach_tools(db: Database, rows: list[dict]) -> list[dict]:
         r["tools"] = sorted(tools.get(r["id"], []))
         r["email_status"] = status.get(r["id"], "")
         _display(r)
+    _job_locations(db, rows)
     return rows
 
 
@@ -198,6 +226,7 @@ def get_lead(db: Database, pid: int) -> dict | None:
     row["tools"] = sorted({s["tool"] for s in db.query("SELECT tool FROM lead_sources WHERE person_id=?", (pid,))})
     row["contact_points"] = db.query("SELECT kind, value, provider, provider_grade, line_type, verification, verified_at, is_primary, found_at FROM contact_points WHERE person_id=? ORDER BY kind, is_primary DESC, id", (pid,))
     row["sources"] = db.query("SELECT tool, kind, source_key, collected_at, synced_at FROM lead_sources WHERE person_id=? ORDER BY tool", (pid,))
+    _job_locations(db, [row])
     return _display(row)
 
 
