@@ -514,17 +514,30 @@ const LD = (() => {
       el('div', { class: 'drawer', role: 'dialog', 'aria-modal': 'true' }, body));
     document.body.append(back);
     const users = (await api('/api/crm/users')).items.map(u => u.email);
+    // After any change: redraw the drawer AND the page behind it, so nothing waits for a reload.
+    const changed = async () => { await render(); try { onChange && onChange(); } catch (e) {} };
+    // Save button: says why when the box is empty, blocks double clicks, keeps the text if saving fails.
+    const saver = (label, input, emptyMsg, send, okMsg) => {
+      const b = el('button', { onclick: async () => {
+        if (!input.value.trim()) { toast(emptyMsg, false); input.focus(); return; }
+        b.disabled = true;
+        try { await send(); toast(okMsg); await changed(); } catch (e) { toast(e.message, false); b.disabled = false; }
+      } }, label);
+      return b;
+    };
     async function render() {
       let d; try { d = await api('/api/crm/leads/' + pid); } catch (e) { body.replaceChildren(el('div', { class: 'msg err' }, e.message)); return; }
       const today = localToday();
       const stageSel = el('select', { 'aria-label': 'Stage' }, ...Object.entries(STAGE_LABEL).map(([k, l]) => el('option', { value: k, selected: k === d.crm.stage }, l)));
-      stageSel.addEventListener('change', async () => { const ok = await changeStage(pid, stageSel.value); if (ok) toast('Stage updated'); render(); });
+      stageSel.addEventListener('change', async () => { const ok = await changeStage(pid, stageSel.value); if (ok) { toast('Stage updated'); changed(); } else render(); });
       const ownerSel = el('select', { 'aria-label': 'Owner' }, el('option', { value: '' }, 'Unassigned'), ...users.map(u => el('option', { value: u, selected: u === d.crm.owner_email }, u)));
-      ownerSel.addEventListener('change', async () => { try { await api('/api/crm/leads/' + pid + '/owner', { method: 'POST', json: { owner: ownerSel.value } }); toast('Owner updated'); } catch (e) { toast(e.message, false); } render(); });
-      const note = el('textarea', { rows: 2, placeholder: 'Add a note…', style: 'width:100%' });
-      const addNote = el('button', { onclick: async () => { if (!note.value.trim()) return; try { await api('/api/crm/leads/' + pid + '/notes', { method: 'POST', json: { body: note.value } }); toast('Note added'); render(); } catch (e) { toast(e.message, false); } } }, 'Add note');
-      const tTitle = el('input', { type: 'text', placeholder: 'New task (e.g. Follow up by email)', style: 'flex:1;min-width:160px' }), tDue = el('input', { type: 'date' });
-      const addTask = el('button', { onclick: async () => { if (!tTitle.value.trim()) return; try { await api('/api/crm/tasks', { method: 'POST', json: { person_id: pid, title: tTitle.value, due_at: tDue.value || null } }); toast('Task added'); render(); } catch (e) { toast(e.message, false); } } }, 'Add task');
+      ownerSel.addEventListener('change', async () => { try { await api('/api/crm/leads/' + pid + '/owner', { method: 'POST', json: { owner: ownerSel.value } }); toast('Owner updated'); changed(); } catch (e) { toast(e.message, false); render(); } });
+      const note = el('textarea', { rows: 2, placeholder: 'Add a note…', style: 'width:100%', 'aria-label': 'Note' });
+      const addNote = saver('Add note', note, 'Type a note first', () => api('/api/crm/leads/' + pid + '/notes', { method: 'POST', json: { body: note.value.trim() } }), 'Note added');
+      note.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addNote.click(); });
+      const tTitle = el('input', { type: 'text', placeholder: 'New task (e.g. Follow up by email)', style: 'flex:1;min-width:160px', 'aria-label': 'Task' }), tDue = el('input', { type: 'date', 'aria-label': 'Due date' });
+      const addTask = saver('Add task', tTitle, 'Type what the task is first (the date alone is not enough)', () => api('/api/crm/tasks', { method: 'POST', json: { person_id: pid, title: tTitle.value.trim(), due_at: tDue.value || null } }), 'Task added');
+      tTitle.addEventListener('keydown', e => { if (e.key === 'Enter') addTask.click(); });
       // Usable contacts first as copyable rows; invalid ones folded away so they don't drown the good ones.
       const KIND_ICON = { email: '✉', phone: '☎', company_phone: '🏢' };
       const cpRow = c => el('div', { class: 'cp' + (c.verification === 'invalid' ? ' bad' : '') },
@@ -547,7 +560,7 @@ const LD = (() => {
         d.crm.stage === 'lost' || d.crm.stage === 'not_a_fit' ? el('div', { class: 'mut' }, 'Reason: ' + (d.crm.lost_reason || '—')) : null,
         el('h3', {}, 'Contact details'), contacts,
         el('h3', {}, 'Tasks'), el('div', { class: 'row' }, tTitle, tDue, addTask),
-        d.tasks.length ? el('ul', { class: 'plain' }, ...d.tasks.map(t => el('li', {}, el('label', { class: 'row', style: 'gap:8px' }, el('input', { type: 'checkbox', checked: !!t.done_at, onchange: async e => { try { await api('/api/crm/tasks/' + t.id, { method: 'PATCH', json: { done: e.target.checked } }); render(); } catch (er) { toast(er.message, false); } } }),
+        d.tasks.length ? el('ul', { class: 'plain' }, ...d.tasks.map(t => el('li', {}, el('label', { class: 'row', style: 'gap:8px' }, el('input', { type: 'checkbox', checked: !!t.done_at, onchange: async e => { try { await api('/api/crm/tasks/' + t.id, { method: 'PATCH', json: { done: e.target.checked } }); toast(e.target.checked ? 'Task done' : 'Task reopened'); changed(); } catch (er) { toast(er.message, false); render(); } } }),
           el('span', { style: t.done_at ? 'text-decoration:line-through;color:#94a3b8' : '' }, t.title), t.due_at ? el('span', { class: 'tag ' + (t.overdue ? 'bad' : '') }, fmtDue(t.due_at, today)) : null)))) : el('div', { class: 'mut', style: 'margin-top:6px' }, 'No tasks yet.'),
         el('h3', {}, 'Notes'), note, el('div', { style: 'margin:6px 0 10px' }, addNote),
         d.notes.length ? el('ul', { class: 'plain' }, ...d.notes.map(n => el('li', {}, el('div', {}, n.body), el('div', { class: 'mut' }, n.author + ' · ' + when(n.created_at))))) : null,
