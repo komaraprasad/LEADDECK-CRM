@@ -86,17 +86,18 @@ def _domain(value: str | None) -> str:
     return v[4:] if v.startswith("www.") else v
 
 
-def _email_pref(value: str | None, company_domain: str) -> int:
-    """2 = on the lead's company domain (or a subdomain), 1 = other work domain, 0 = personal mailbox."""
+def _email_pref(value: str | None, company_domain: str, label: str | None = None) -> int:
+    """2 = on the lead's company domain (or a subdomain), 1 = other work domain, 0 = personal mailbox
+    (a personal domain, or one the provider itself labelled personal)."""
     d = _domain(value)
     if company_domain and (d == company_domain or d.endswith("." + company_domain)):
         return 2
-    return 0 if d in PERSONAL_EMAIL_DOMAINS else 1
+    return 0 if d in PERSONAL_EMAIL_DOMAINS or (label or "").lower() == "personal" else 1
 
 
 def _best_first(cps: list[dict], company_domain: str = "") -> list[dict]:
     return sorted(cps, key=lambda c: (_RANK.get(c["verification"], 0), _GRADE.get((c.get("provider_grade") or "").upper(), -1),
-                                      _email_pref(c["value"], company_domain) if c.get("kind") == "email" else 0), reverse=True)
+                                      _email_pref(c["value"], company_domain, c.get("line_type")) if c.get("kind") == "email" else 0), reverse=True)
 
 
 def _company_domain(db: Database, pid: int) -> str:

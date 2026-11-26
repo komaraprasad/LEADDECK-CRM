@@ -125,13 +125,13 @@ def _primary(db, pid):
 
 @pytest.mark.parametrize("order", [0, 1])
 def test_primary_prefers_work_email_over_personal_on_tie(db, order):
-    a = mkperson(db, "Narendra B", "u1", "Toshiba")
-    vals = [ContactValue("nb@gmail.com", "valid", "A"), ContactValue("nb@toshiba-tsip.com", "valid", "A")]
+    a = mkperson(db, "Sam B", "u1", "Example Corp")
+    vals = [ContactValue("sb@gmail.com", "valid", "A"), ContactValue("sb@examplecorp-labs.com", "valid", "A")]
     if order:
         vals.reverse()
     E.run_enrichment(db, FakeProvider({a: ProviderResult("matched", vals, credits_used=1)}), mkcamp(db, [a]), 5, 5)
-    assert _primary(db, a) == ["nb@toshiba-tsip.com"]
-    assert db.one("SELECT email FROM people WHERE id=?", (a,))["email"] == "nb@toshiba-tsip.com"
+    assert _primary(db, a) == ["sb@examplecorp-labs.com"]
+    assert db.one("SELECT email FROM people WHERE id=?", (a,))["email"] == "sb@examplecorp-labs.com"
 
 
 def test_primary_prefers_company_domain_over_other_work_domain(db):
@@ -470,43 +470,81 @@ def test_company_industry_and_size_are_shown_and_exported(db):
 # ---- contacts a tool gives only as a LinkedIn link (JobHarvest)
 def test_url_only_contact_is_searchable_and_gets_a_display_name(db):
     from app.leads import list_leads, get_lead, name_from_linkedin
-    a = mkperson(db, None, "https://www.linkedin.com/in/riya-vedpathak-5651a32a3", "Lenskart.com")
-    b = mkperson(db, None, "https://www.linkedin.com/in/nagamohanks", "Lenskart.com")
+    a = mkperson(db, None, "https://www.linkedin.com/in/riya-vedpathak-5651a32a3", "Example Retail")
+    b = mkperson(db, None, "https://www.linkedin.com/in/samplename", "Example Retail")
     assert name_from_linkedin("https://www.linkedin.com/in/riya-vedpathak-5651a32a3/") == "Riya Vedpathak"
-    assert name_from_linkedin("https://www.linkedin.com/in/nagamohanks") == "Nagamohanks"
+    assert name_from_linkedin("https://www.linkedin.com/in/samplename") == "Samplename"
     assert name_from_linkedin("https://www.linkedin.com/in/ACwAAB12345xyz") is None  # opaque id, not a name
     assert name_from_linkedin(None) is None
-    assert list_leads(db, {"q": "nagamohan"})["total"] == 1
+    assert list_leads(db, {"q": "samplena"})["total"] == 1
     row = {r["id"]: r for r in list_leads(db, {})["items"]}[a]
     assert row["full_name"] is None and row["display_name"] == "Riya Vedpathak" and row["name_from_url"]
-    assert get_lead(db, b)["display_name"] == "Nagamohanks"
+    assert get_lead(db, b)["display_name"] == "Samplename"
     named = mkperson(db, "Real Name", "https://www.linkedin.com/in/something-else")
     r2 = get_lead(db, named)
     assert r2["display_name"] == "Real Name" and not r2["name_from_url"]
 
 
 def test_enrichment_fills_blank_name_and_title_only(db):
-    a = mkperson(db, None, "https://www.linkedin.com/in/nagamohanks", "Lenskart.com")
+    a = mkperson(db, None, "https://www.linkedin.com/in/samplename", "Example Retail")
     b = mkperson(db, "Kept Name", "u2", "Acme"); db.update("people", b, {"title": "Kept Title"})
     res = lambda n, t: ProviderResult("matched", [ContactValue("x%s@x.com" % n[:1], "valid", "A")], credits_used=1, matched_name=n, matched_title=t)
-    E.run_enrichment(db, FakeProvider({a: res("Naga Mohan K S", "Engineering Manager"), b: res("Kept Name", "Other Title")}), mkcamp(db, [a, b]), 5, 5)
-    assert db.one("SELECT full_name, title FROM people WHERE id=?", (a,)) == {"full_name": "Naga Mohan K S", "title": "Engineering Manager"}
+    E.run_enrichment(db, FakeProvider({a: res("Sample N Ame", "Engineering Manager"), b: res("Kept Name", "Other Title")}), mkcamp(db, [a, b]), 5, 5)
+    assert db.one("SELECT full_name, title FROM people WHERE id=?", (a,)) == {"full_name": "Sample N Ame", "title": "Engineering Manager"}
     assert db.one("SELECT full_name, title FROM people WHERE id=?", (b,)) == {"full_name": "Kept Name", "title": "Kept Title"}
     assert db.one("SELECT name_key FROM people WHERE id=?", (a,))["name_key"]  # name now usable for matching
     from app.providers.rocketreach import parse_profile
     assert parse_profile({"name": "A B", "current_title": "CTO", "emails": [{"email": "a@x.com"}]}).matched_title == "CTO"
 
 
+REAL_SHAPE_PROFILE = {  # field names exactly as in a real RocketReach premium response (all values fictional)
+    "name": "Jo Doe", "current_employer": "Acme Labs", "current_title": "Head of Engineering",
+    "emails": [{"email": "jo@acme.example", "smtp_valid": "valid", "grade": "A", "type": "professional"},
+               {"email": "jo.doe@gmail.com", "smtp_valid": "valid", "grade": "A", "type": "personal"},
+               {"email": "old@gone.example", "smtp_valid": "invalid", "grade": "F", "type": "professional"}],
+    "current_work_email": "jo@acme.example", "current_personal_email": "jo.doe@gmail.com",
+    "recommended_professional_email": "jo@acme-labs.example", "recommended_personal_email": "jo.doe@gmail.com",
+    "recommended_email": "jo@acme.example",
+    "phones": [{"number": "+91 90000 00001", "type": "mobile", "grade": "A"}],
+    "mobile_phone": "+919000000001", "current_work_phone": "+91 80 0000 0002",
+    "current_employer_phone": {"number": "+91 90000 00003", "grade": "A", "validity": "valid", "type": "office"},
+}
+
+
+def test_rocketreach_keeps_every_email_and_phone_with_personal_work_labels():
+    r = parse_profile(REAL_SHAPE_PROFILE)
+    em = {c.value: c for c in r.emails}
+    assert set(em) == {"jo@acme.example", "jo.doe@gmail.com", "old@gone.example", "jo@acme-labs.example"}   # scalar-only one kept
+    assert em["jo@acme.example"].line_type == "work" and em["jo.doe@gmail.com"].line_type == "personal"
+    assert em["jo@acme-labs.example"].line_type == "work" and em["jo@acme-labs.example"].verification == "unverified"
+    ph = {c.value: c.line_type for c in r.phones}
+    assert ph == {"+91 90000 00001": "mobile", "+91 80 0000 0002": "direct dial"}   # mobile_phone duplicate not repeated
+    assert [c.value for c in r.company_phones] == ["+91 90000 00003"]
+
+
+def test_enriched_lead_exports_all_contacts_and_work_email_is_primary(db):
+    from app import leads as L
+    a = mkperson(db, "Jo Doe", "https://www.linkedin.com/in/jo-doe", "Acme Labs")
+    E.run_enrichment(db, FakeProvider({a: parse_profile(REAL_SHAPE_PROFILE)}), mkcamp(db, [a]), 5, 5)
+    row = L.export_rows(db, ids=[a])[0]
+    assert row["email"] == "jo@acme.example"                 # work beats personal at equal grade
+    assert row["personal_email"] == "jo.doe@gmail.com"
+    assert "jo.doe@gmail.com (personal)" in row["all_emails"] and "jo@acme-labs.example (work)" in row["all_emails"]
+    assert "old@gone.example" not in row["all_emails"]             # invalid never exported as usable
+    assert row["phone"] == "+91 90000 00001" and "+91 80 0000 0002 (direct dial)" in row["all_phones"]
+    assert row["company_phone"] == "+91 90000 00003"
+
+
 def test_jobharvest_contact_shows_job_location(db):
     from app import leads as L
-    a = mkperson(db, None, "https://www.linkedin.com/in/roopna", "Moneyview")
+    a = mkperson(db, None, "https://www.linkedin.com/in/riley", "Example Fintech")
     b = mkperson(db, "Own", "u9", "Acme"); db.update("people", b, {"location": "Chennai"})
     for pid in (a, b):
         db.insert("lead_sources", {"tool": "jobharvest", "kind": "person", "source_key": "jh:%d" % pid, "person_id": pid,
                                    "raw_payload": '{"location": "Bengaluru, Karnataka, India", "job_title": "Java Developer", "job_url": "https://www.linkedin.com/jobs/view/1/"}',
                                    "collected_at": "2026-11-26T10:00:00+00:00"})
     row = {r["id"]: r for r in L.export_rows(db, ids=[a, b])}
-    assert (row[a]["display_name"], row[a]["name_source"], row[a]["hiring_for"], row[a]["job_url"]) == ("Roopna", "LinkedIn link", "Java Developer", "https://www.linkedin.com/jobs/view/1/")
+    assert (row[a]["display_name"], row[a]["name_source"], row[a]["hiring_for"], row[a]["job_url"]) == ("Riley", "LinkedIn link", "Java Developer", "https://www.linkedin.com/jobs/view/1/")
     assert (row[b]["display_name"], row[b]["name_source"], row[b]["hiring_for"]) == ("Own", "", "Java Developer")
     items = {r["id"]: r for r in L.list_leads(db, {})["items"]}
     assert items[a]["job_location"] == "Bengaluru, Karnataka, India" and not items[a]["location"]
@@ -519,9 +557,9 @@ def test_enrichment_fills_blank_location_only(db):
     assert parse_profile({"name": "A", "location": "Bengaluru, Karnataka, India"}).matched_location == "Bengaluru, Karnataka, India"
     assert parse_profile({"name": "A", "city": "Pune", "country": "India"}).matched_location == "Pune, India"
     assert parse_profile({"name": "A"}).matched_location is None
-    a = mkperson(db, None, "https://www.linkedin.com/in/roopna", "Moneyview")
+    a = mkperson(db, None, "https://www.linkedin.com/in/riley", "Example Fintech")
     b = mkperson(db, "B", "u2", "Acme"); db.update("people", b, {"location": "Chennai"})
-    res = ProviderResult("matched", [ContactValue("r@x.com", "valid", "A")], credits_used=1, matched_name="Roopna R", matched_location="Bengaluru, India")
+    res = ProviderResult("matched", [ContactValue("r@x.com", "valid", "A")], credits_used=1, matched_name="Riley R", matched_location="Bengaluru, India")
     E.run_enrichment(db, FakeProvider({a: res, b: ProviderResult("matched", [ContactValue("b@x.com", "valid", "A")], credits_used=1, matched_name="B", matched_location="Delhi")}), mkcamp(db, [a, b]), 5, 5)
     assert db.one("SELECT location FROM people WHERE id=?", (a,))["location"] == "Bengaluru, India"
     assert db.one("SELECT location FROM people WHERE id=?", (b,))["location"] == "Chennai"  # never overwritten

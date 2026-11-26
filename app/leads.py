@@ -163,7 +163,19 @@ def _attach_tools(db: Database, rows: list[dict]) -> list[dict]:
     if ids:
         for c in db.query(f"SELECT person_id, value FROM contact_points WHERE kind='company_phone' AND is_primary=1 AND person_id IN ({ph})", ids):
             cphone[c["person_id"]] = c["value"]
+    # every usable email/phone a provider found (invalid ones left out), best first, labelled
+    allc: dict[int, dict[str, list]] = {}
+    if ids:
+        for c in db.query(f"SELECT person_id, kind, value, line_type, verification, is_primary FROM contact_points "
+                          f"WHERE verification <> 'invalid' AND kind IN ('email','phone') AND person_id IN ({ph}) "
+                          f"ORDER BY person_id, kind, is_primary DESC, id", ids):
+            allc.setdefault(c["person_id"], {"email": [], "phone": []})[c["kind"]].append(c)
+    lab = lambda c: c["value"] + (" (" + c["line_type"] + ")" if c.get("line_type") else "")
     for r in rows:
+        mine = allc.get(r["id"], {"email": [], "phone": []})
+        r["personal_email"] = next((c["value"] for c in mine["email"] if (c.get("line_type") or "") == "personal"), "")
+        r["all_emails"] = "; ".join(lab(c) for c in mine["email"])
+        r["all_phones"] = "; ".join(lab(c) for c in mine["phone"])
         r["company_phone"] = cphone.get(r["id"], "")
         r["quality"] = quality_band(r.get("score") or 0)
         r["tools"] = sorted(tools.get(r["id"], []))

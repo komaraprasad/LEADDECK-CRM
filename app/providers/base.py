@@ -12,7 +12,7 @@ class ContactValue:
     value: str
     verification: str = "unverified"   # unverified | valid | invalid | unknown
     grade: str | None = None
-    line_type: str | None = None        # phones: mobile | direct dial | office | other
+    line_type: str | None = None        # phones: mobile | direct dial | office | other; emails: work | personal
 
 
 @dataclass

@@ -58,6 +58,20 @@ def _line_type(t) -> str | None:
     return t or None
 
 
+def _email_type(t) -> str | None:
+    """RocketReach email `type`: professional -> work, personal -> personal."""
+    t = str(t or "").strip().lower()
+    return {"professional": "work", "work": "work", "business": "work", "personal": "personal"}.get(t, t or None)
+
+
+# Single-value fields RocketReach sends besides the emails/phones lists (seen in real responses). Every one is
+# kept: an address here that the list left out would otherwise be lost.
+_EMAIL_FIELDS = (("current_work_email", "work"), ("recommended_professional_email", "work"), ("current_personal_email", "personal"),
+                 ("recommended_personal_email", "personal"), ("recommended_email", None))
+_PHONE_FIELDS = (("mobile_phone", "mobile"), ("current_work_phone", "direct dial"), ("phone", None))
+_digits = lambda s: "".join(ch for ch in str(s) if ch.isdigit())
+
+
 def _parse(p: dict) -> ProviderResult:
     emails, phones = [], []
     for e in p.get("emails") or []:
@@ -65,19 +79,35 @@ def _parse(p: dict) -> ProviderResult:
         addr = str(addr).strip().lower()
         if "@" not in addr:
             continue
-        smtp = str(e.get("smtp_valid") or "").lower() if isinstance(e, dict) else ""
-        emails.append(ContactValue(addr, _SMTP.get(smtp, "unverified"), (e.get("grade") if isinstance(e, dict) else None)))
+        d = e if isinstance(e, dict) else {}
+        smtp = str(d.get("smtp_valid") or "").lower()
+        emails.append(ContactValue(addr, _SMTP.get(smtp, "unverified"), d.get("grade"), _email_type(d.get("type"))))
+    seen = {c.value for c in emails}
+    for k, kind in _EMAIL_FIELDS:
+        v = p.get(k)
+        addr = str(v).strip().lower() if isinstance(v, str) else ""
+        if "@" in addr:
+            if addr not in seen:
+                emails.append(ContactValue(addr, "unverified", None, kind)); seen.add(addr)
+            else:  # the list had it: fill in the personal/work label if the list left it out
+                for c in emails:
+                    if c.value == addr and not c.line_type and kind:
+                        c.line_type = kind
     for ph in p.get("phones") or []:
         num = (ph.get("number") if isinstance(ph, dict) else ph) or ""
         num = str(num).strip()
         if num:
             d = ph if isinstance(ph, dict) else {}
             phones.append(ContactValue(num, _phone_verification(d), d.get("grade"), _line_type(d.get("type"))))
-    if not phones:  # tolerate scalar fields some response variants use (unverified assumption)
-        for k in ("current_work_phone", "phone", "mobile_phone"):
-            if isinstance(p.get(k), str) and p[k].strip():
-                phones.append(ContactValue(p[k].strip(), "unverified", None))
-                break
+    seen_ph = {_digits(c.value)[-10:] for c in phones}
+    for k, kind in _PHONE_FIELDS:
+        v = p.get(k)
+        num = (v.get("number") if isinstance(v, dict) else v) if v else ""
+        num = str(num or "").strip()
+        if num and _digits(num) and _digits(num)[-10:] not in seen_ph:
+            d = v if isinstance(v, dict) else {}
+            phones.append(ContactValue(num, _phone_verification(d) if d else "unverified", d.get("grade"), _line_type(d.get("type")) or kind))
+            seen_ph.add(_digits(num)[-10:])
     company = []
     cp = p.get("current_employer_phone")
     if isinstance(cp, dict) and str(cp.get("number") or "").strip():
