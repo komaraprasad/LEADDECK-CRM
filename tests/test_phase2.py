@@ -495,3 +495,16 @@ def test_enrichment_fills_blank_name_and_title_only(db):
     assert db.one("SELECT name_key FROM people WHERE id=?", (a,))["name_key"]  # name now usable for matching
     from app.providers.rocketreach import parse_profile
     assert parse_profile({"name": "A B", "current_title": "CTO", "emails": [{"email": "a@x.com"}]}).matched_title == "CTO"
+
+
+def test_enrichment_fills_blank_location_only(db):
+    from app.providers.rocketreach import parse_profile
+    assert parse_profile({"name": "A", "location": "Bengaluru, Karnataka, India"}).matched_location == "Bengaluru, Karnataka, India"
+    assert parse_profile({"name": "A", "city": "Pune", "country": "India"}).matched_location == "Pune, India"
+    assert parse_profile({"name": "A"}).matched_location is None
+    a = mkperson(db, None, "https://www.linkedin.com/in/roopna", "Moneyview")
+    b = mkperson(db, "B", "u2", "Acme"); db.update("people", b, {"location": "Chennai"})
+    res = ProviderResult("matched", [ContactValue("r@x.com", "valid", "A")], credits_used=1, matched_name="Roopna R", matched_location="Bengaluru, India")
+    E.run_enrichment(db, FakeProvider({a: res, b: ProviderResult("matched", [ContactValue("b@x.com", "valid", "A")], credits_used=1, matched_name="B", matched_location="Delhi")}), mkcamp(db, [a, b]), 5, 5)
+    assert db.one("SELECT location FROM people WHERE id=?", (a,))["location"] == "Bengaluru, India"
+    assert db.one("SELECT location FROM people WHERE id=?", (b,))["location"] == "Chennai"  # never overwritten

@@ -33,6 +33,10 @@ def parse_profile(p: dict) -> ProviderResult:
     r.matched_name = (p.get("name") or None) if isinstance(p.get("name"), str) else None
     r.matched_employer = (p.get("current_employer") or None) if isinstance(p.get("current_employer"), str) else None
     r.matched_title = (p.get("current_title") or None) if isinstance(p.get("current_title"), str) else None
+    loc = p.get("location")
+    if not (isinstance(loc, str) and loc.strip()):
+        loc = ", ".join(x for x in (p.get("city"), p.get("region"), p.get("country")) if isinstance(x, str) and x.strip())
+    r.matched_location = loc.strip() or None
     import json
     r.shape = json.dumps(shape_of(p), sort_keys=True)[:2000]
     return r
