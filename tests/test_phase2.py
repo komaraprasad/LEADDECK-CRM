@@ -588,3 +588,28 @@ def test_commentminer_lead_shows_post_and_comment(db):
     row = L.export_rows(db, ids=[a])[0]
     assert (row["post_title"], row["comment"], row["comment_count"]) == ("Hi bench sales recruiters", "Interested, please share", 2)
     assert L._post_title("Urn:Li:Activity:7530648825317998592") == ""
+
+
+def test_commentminer_groups_comments_emails_and_type(db):
+    from app.mappers.commentminer import map_payload, pick_emails, lead_type_from_headline
+    from app import leads as L
+    from app.merge import upsert_records
+    base = {"author_name": "Dee P", "author_profile_url": "https://www.linkedin.com/in/dee-p", "author_headline": "SR US IT Recruiter at Sampleshaper inc",
+            "email": "dee.p.recruits@gmail.com", "company_website": "https://sampleshaper.com"}
+    rows = [{**base, "comment_text": "dee.p.recruits@gmail.com", "post_title": "Post A", "post_url": "https://l/a", "commented_at": "2026-11-24T10:00:00Z"},
+            {**base, "comment_text": "or dee@sampleshaper.com, cc pat@othervendor.com", "post_title": "Post B", "post_url": "https://l/b", "commented_at": "2026-11-25T10:00:00Z"}]
+    recs = map_payload({"comments": rows}).records
+    assert len(recs) == 1                                         # two comments, one person, nothing overwritten
+    f = recs[0].fields
+    assert f["email"] == "dee@sampleshaper.com"                   # work email on their own company site beats gmail
+    assert f["lead_type"] == "employer_contact"
+    upsert_records(db, recs)
+    pid = db.one("SELECT id FROM people WHERE linkedin_url LIKE '%dee-p%'")["id"]
+    row = L.export_rows(db, ids=[pid])[0]
+    assert row["comment_count"] == 2 and row["post_title"] == "Post B"
+    assert row["comment_emails"] == "pat@othervendor.com; dee.p.recruits@gmail.com"
+    # a work email given by the tool is never replaced; nothing on their domain -> keep the tool's email
+    assert pick_emails("a@vendor.com", ["x@sampleshaper.com"], "https://sampleshaper.com")[0] == "a@vendor.com"
+    assert pick_emails("a@gmail.com", ["b@else.com"], "https://sampleshaper.com") == ("a@gmail.com", ["b@else.com"])
+    assert lead_type_from_headline("Bench Sales Recruiter") == "employer_contact"
+    assert lead_type_from_headline("Java Developer | Spring") == "unknown"

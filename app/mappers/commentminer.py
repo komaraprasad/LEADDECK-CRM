@@ -48,6 +48,9 @@ def map_payload(payload: object) -> MapResult:
     except ValueError as e:
         res.errors.append(str(e))
         return res
+    # One row per comment; a person can comment many times. Group by person first: every comment used to
+    # overwrite the previous one (same source key), so only one comment per person was ever kept.
+    groups: dict[str, list] = {}
     for i, raw in enumerate(rows):
         try:
             if not isinstance(raw, dict):
@@ -57,17 +60,71 @@ def map_payload(payload: object) -> MapResult:
             url = pick(r, "author_profile_url", "profile_url", "linkedin_url")
             if not (name or url):
                 raise ValueError("no name or profile url")
-            fields = {
-                "full_name": name, "headline": pick(r, "author_headline", "headline"),
-                "linkedin_url": url, "email": pick(r, "email"), "phone": pick(r, "phone"),
-                "company_website": pick(r, "company_website"),
-                "company_url": pick(r, "company_linkedin_url"),
-                "company_name": company_name(pick(r, "author_headline", "headline"), pick(r, "company_linkedin_url"), pick(r, "company_website")),
-                "lead_type": "unknown",
-            }
-            key = url or f"{name}|{pick(r, 'post_id')}"
-            res.records.append(NormalizedRecord(TOOL, "person", f"{TOOL}:{key}", raw, fields,
-                                                parse_dt(pick(r, "commented_at", "collected_at", "created_at", "comment_date"))))
+            groups.setdefault(url or f"{name}|{pick(r, 'post_id')}", []).append((raw, r))
         except Exception as e:
             res.errors.append(f"row {i}: {e}")
+    for key, items in groups.items():
+        try:
+            items.sort(key=lambda it: str(pick(it[1], "commented_at", "collected_at", "created_at", "comment_date") or ""))
+            raw, r = items[-1]                                   # newest comment carries the profile fields
+            fv = lambda *ks: next((pick(x, *ks) for _, x in reversed(items) if pick(x, *ks)), None)
+            headline, website, curl = fv("author_headline", "headline"), fv("company_website"), fv("company_linkedin_url")
+            texts = [pick(x, "comment_text") or "" for _, x in items]
+            email, others = pick_emails(fv("email"), texts, website)
+            comments = [{"post_title": pick(x, "post_title"), "post_url": pick(x, "post_url"), "comment_text": pick(x, "comment_text"),
+                         "commented_at": pick(x, "commented_at")} for _, x in items]
+            fields = {
+                "full_name": fv("author_name", "name"), "headline": headline,
+                "linkedin_url": fv("author_profile_url", "profile_url", "linkedin_url"), "email": email, "phone": fv("phone"),
+                "company_website": website, "company_url": curl, "company_name": company_name(headline, curl, website),
+                "lead_type": lead_type_from_headline(headline),
+            }
+            out = {**raw, "_comments": comments, "_comment_emails": others}
+            res.records.append(NormalizedRecord(TOOL, "person", f"{TOOL}:{key}", out, fields,
+                                                parse_dt(pick(r, "commented_at", "collected_at", "created_at", "comment_date"))))
+        except Exception as e:
+            res.errors.append(f"{key}: {e}")
     return res
+
+
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+
+
+def _host(website) -> str:
+    h = re.sub(r"^(https?://)?(www\.)?", "", (website or "").strip().lower()).split("/")[0]
+    return h
+
+
+def pick_emails(given, comment_texts, website) -> tuple:
+    """(main email, other emails written in their comments). The tool's email stays the main one, except when it
+    is a personal mailbox and a comment contains an address on the lead's own company website: that work address
+    is clearly theirs and better for outreach. Other addresses may belong to a colleague, so they are only listed."""
+    from app.enrich import PERSONAL_EMAIL_DOMAINS
+    given = (given or "").strip().lower() or None
+    found = []
+    for t in comment_texts:
+        for e in _EMAIL.findall(t or ""):
+            e = e.lower().rstrip(".")
+            if e not in found:
+                found.append(e)
+    host, main = _host(website), given
+    dom = lambda e: e.rsplit("@", 1)[-1]
+    if host and (not given or dom(given) in PERSONAL_EMAIL_DOMAINS):
+        work = next((e for e in found if dom(e) == host or dom(e).endswith("." + host) or host.endswith("." + dom(e))), None)
+        main = work or given
+    if not main and found:
+        main = found[0]
+    return main, [e for e in found if e != main and e != given] + ([given] if given and given != main else [])
+
+
+_EMPLOYER = re.compile(
+    r"recruit|recuit|recuriter|requiter|recrut|\btalent\b|\bstaffing\b|\bhr\b|human resources|\bhiring\b|\bsourcer\b|headhunt|"
+    r"bench ?sales?|bench (delivery|marketing)|resource (coordinator|executive|manag\w*|specialist)|client acquisition|"
+    r"\bta (lead|partner|specialist|manager)\b|account manager|business development|\bbdm\b|delivery (lead|manager|head)|"
+    r"sell candidates|placed \d+", re.I)
+
+
+def lead_type_from_headline(headline) -> str:
+    """Recruiters / staffing / HR people are employer-side contacts. Anything else stays unknown (never guessed as
+    a candidate). A guess from the headline only."""
+    return "employer_contact" if _EMPLOYER.search(headline or "") else "unknown"

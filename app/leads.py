@@ -92,16 +92,25 @@ def _post_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
             continue
         if not isinstance(raw, dict):
             continue
-        txt = lambda k: raw[k].strip() if isinstance(raw.get(k), str) else ""
-        cur = found.setdefault(s["person_id"], {"n": 0})
-        cur["n"] += 1
-        if "url" not in cur:   # newest comment wins
+        cur = found.setdefault(s["person_id"], {"n": 0, "emails": []})
+        # grouped records carry every comment in _comments; older records were one comment each
+        comments = raw["_comments"] if isinstance(raw.get("_comments"), list) else [raw]
+        comments = [c for c in comments if isinstance(c, dict)]
+        cur["n"] += len(comments)
+        for e in raw.get("_comment_emails") or []:
+            if isinstance(e, str) and e not in cur["emails"]:
+                cur["emails"].append(e)
+        if "url" not in cur and comments:   # newest comment wins
+            last = max(comments, key=lambda c: str(c.get("commented_at") or ""))
+            txt = lambda k: last[k].strip() if isinstance(last.get(k), str) else ""
             cur.update(title=_post_title(txt("post_title")), url=txt("post_url"), comment=txt("comment_text")[:500])
     for r in rows:
+        r.setdefault("comment_emails", "")
         c = found.get(r["id"])
         if c and "url" in c:
             r["post_title"] = c["title"] or ("LinkedIn post" if c["url"] else "")
             r["post_url"], r["comment"], r["comment_count"] = c["url"], c["comment"], c["n"]
+            r["comment_emails"] = "; ".join(e for e in c["emails"] if e != (r.get("email") or "").lower())
 
 
 def quality_band(score: int) -> str:
