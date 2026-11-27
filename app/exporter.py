@@ -152,7 +152,7 @@ def build_xlsx(rows: list[dict]) -> bytes:
     for name, rs in sheets:
         summary.append([name, len(rs), has(rs, "email"), has(rs, "phone"), sum(1 for r in rs if r.get("lead_type") == "employer_contact")])
     summary.append([])
-    notes = ["Each sheet after this one lists leads; header colours: blue = lead, green = company, purple = contact, "
+    notes = ["The other tabs list the leads; header colours: blue = lead, green = company, purple = contact, "
              "amber = location, pink = where it was found, grey = status.",
              "Columns a sheet has no data for are left out. Links say Open profile / Open job / Open post."]
     if with_all and len(tools_present) > 1:
@@ -175,6 +175,9 @@ def build_xlsx(rows: list[dict]) -> bytes:
         _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS])
     for t in tools_present:
         _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], TOOL_COLUMNS[t])
+    # the leads open first; the summary is the last tab
+    wb.move_sheet(summary, offset=len(wb.sheetnames) - 1)
+    wb.active = 0
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()

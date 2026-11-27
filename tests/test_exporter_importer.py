@@ -10,7 +10,7 @@ def test_formula_neutralized_csv_and_xlsx():
     c = {h: v for h, v in zip(got[0], got[1])}
     assert c["Name"].startswith("'=") and c["Title / Headline"] == "'-2" and c["Company"] == "'@SUM(A1)"
     wb = load_workbook(io.BytesIO(build_xlsx(rows)))
-    assert wb.sheetnames[:2] == ["Summary", "All Leads"]
+    assert wb.sheetnames == ["All Leads", "Summary"] and wb.active.title == "All Leads"
     ws = wb["All Leads"]
     assert str(ws["A2"].value).startswith("=HYPERLINK") and ws["A2"].data_type == "s"   # stored as text, never a formula
     assert all(c.data_type != "f" for row in ws.iter_rows() for c in row)
@@ -65,7 +65,7 @@ def test_bad_type_and_size_and_unknown_tool():
 def test_xlsx_one_tool_has_no_duplicate_all_leads_sheet():
     one = [{"full_name": "A", "tools": "commentminer", "email": "a@x.co"}, {"full_name": "B", "tools": "commentminer"}]
     wb = load_workbook(io.BytesIO(build_xlsx(one)))
-    assert wb.sheetnames == ["Summary", "CommentMiner"]
+    assert wb.sheetnames == ["CommentMiner", "Summary"] and wb.active.title == "CommentMiner"
     mixed = one + [{"full_name": "C", "tools": "hiringbadge"}]
-    assert load_workbook(io.BytesIO(build_xlsx(mixed))).sheetnames == ["Summary", "All Leads", "Hiring Badge Finder", "CommentMiner"]
-    assert load_workbook(io.BytesIO(build_xlsx([]))).sheetnames == ["Summary", "All Leads"]
+    assert load_workbook(io.BytesIO(build_xlsx(mixed))).sheetnames == ["All Leads", "Hiring Badge Finder", "CommentMiner", "Summary"]
+    assert load_workbook(io.BytesIO(build_xlsx([]))).sheetnames == ["All Leads", "Summary"]
