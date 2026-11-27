@@ -202,5 +202,78 @@ def overview(db: Database, days: int = DEFAULT_DAYS, now: datetime | None = None
     leads["by_day"] = _day_series(db.query("SELECT substr(first_seen,1,10) AS d, COUNT(*) AS added FROM people WHERE substr(first_seen,1,10) >= ? "
                                            "GROUP BY substr(first_seen,1,10)", (day_cut,)), days, today, ("added",))
 
-    return {"days": days, "compare": compare, "generated_at": now.isoformat(timespec="seconds"), "leads": leads, "quality": quality, "funnel": _funnel(db),
+    extra = _breakdowns(db)
+    leads["has_email"], leads["has_phone"] = extra.pop("has_email"), extra.pop("has_phone")
+    leads["has_email_rate"], leads["has_phone_rate"] = _pct(leads["has_email"], total), _pct(leads["has_phone"], total)
+    per = extra.pop("per_tool")
+    for s in sources:
+        s.update(per.get(s["tool"], {}))
+        s["has_email_rate"] = _pct(s.get("has_email", 0), s["leads"])
+        s["enriched_rate"] = _pct(s.get("enriched", 0), s["leads"])
+    return {**extra, "days": days, "compare": compare, "generated_at": now.isoformat(timespec="seconds"), "leads": leads, "quality": quality, "funnel": _funnel(db),
             "enrichment": enrichment, "crm": crm_block, "tasks": tasks, "outreach": outreach, "sources": sources}
+
+
+_HAS_EMAIL = ("(COALESCE(p.email,'') <> '' OR EXISTS (SELECT 1 FROM contact_points x WHERE x.person_id = p.id AND x.kind='email'))")
+_HAS_PHONE = ("(COALESCE(p.phone,'') <> '' OR EXISTS (SELECT 1 FROM contact_points x WHERE x.person_id = p.id AND x.kind='phone'))")
+_ENRICHED = "EXISTS (SELECT 1 FROM enrichment_items i WHERE i.person_id = p.id AND i.status='matched')"
+
+
+def _city(loc: str) -> str:
+    return (loc or "").split(",")[0].strip().title()
+
+
+def _breakdowns(db: Database) -> dict:
+    """Any-source contact coverage, per-tool facts, lead types and top companies / locations."""
+    out = {
+        "has_email": _n(db, f"SELECT COUNT(*) AS n FROM people p WHERE {_HAS_EMAIL}"),
+        "has_phone": _n(db, f"SELECT COUNT(*) AS n FROM people p WHERE {_HAS_PHONE}"),
+        "lead_types": [{"type": r["t"], "leads": int(r["n"])} for r in db.query(
+            "SELECT COALESCE(NULLIF(lead_type,''),'unknown') AS t, COUNT(*) AS n FROM people GROUP BY COALESCE(NULLIF(lead_type,''),'unknown') ORDER BY n DESC")],
+        "top_companies": [{"name": r["name"], "leads": int(r["n"])} for r in db.query(
+            "SELECT c.name AS name, COUNT(*) AS n FROM people p JOIN companies c ON c.id = p.company_id "
+            "WHERE COALESCE(c.name,'') <> '' GROUP BY c.id, c.name ORDER BY n DESC, c.name LIMIT 5")],
+    }
+    cities: dict[str, int] = {}
+    for r in db.query("SELECT location FROM people WHERE COALESCE(location,'') <> ''"):
+        c = _city(r["location"])
+        if c:
+            cities[c] = cities.get(c, 0) + 1
+    out["top_locations"] = [{"name": k, "leads": v} for k, v in sorted(cities.items(), key=lambda kv: (-kv[1], kv[0]))[:5]]
+
+    per: dict[str, dict] = {}
+    for r in db.query(f"SELECT s.tool AS tool, SUM(CASE WHEN {_HAS_EMAIL} THEN 1 ELSE 0 END) AS e, "
+                      f"SUM(CASE WHEN {_HAS_PHONE} THEN 1 ELSE 0 END) AS ph, SUM(CASE WHEN {_ENRICHED} THEN 1 ELSE 0 END) AS en "
+                      f"FROM (SELECT DISTINCT tool, person_id FROM lead_sources WHERE person_id IS NOT NULL) s JOIN people p ON p.id = s.person_id GROUP BY s.tool"):
+        per[r["tool"]] = {"has_email": int(r["e"] or 0), "has_phone": int(r["ph"] or 0), "enriched": int(r["en"] or 0)}
+
+    # per tool: last sync and the tool's own counts
+    tools = []
+    for tool, label in TOOL_LABELS.items():
+        last = db.one("SELECT finished, status, fetched, created, updated FROM sync_runs WHERE tool=? AND dry_run=0 AND status <> 'running' "
+                      "ORDER BY id DESC LIMIT 1", (tool,)) or {}
+        t = {"tool": tool, "label": label, "last_sync": last.get("finished"), "last_status": last.get("status"),
+             "fetched": int(last.get("fetched") or 0), "leads": _n(db, "SELECT COUNT(DISTINCT person_id) AS n FROM lead_sources WHERE tool=? AND person_id IS NOT NULL", (tool,)),
+             "facts": []}
+        if tool == "jobharvest":
+            jobs = _n(db, "SELECT COUNT(*) AS n FROM job_postings WHERE tool=?", (tool,))
+            t["facts"] = [["Jobs", jobs], ["Jobs with a contact", _n(db, "SELECT COUNT(DISTINCT job_id) AS n FROM lead_sources WHERE tool=? AND job_id IS NOT NULL AND person_id IS NOT NULL", (tool,))]]
+        elif tool in ("commentminer", "talentpulse"):
+            comments, posts, otw = 0, set(), 0
+            for r in db.query("SELECT raw_payload FROM lead_sources WHERE tool=? AND person_id IS NOT NULL", (tool,)):
+                try:
+                    raw = json.loads(r["raw_payload"] or "{}") or {}
+                except ValueError:
+                    continue
+                if tool == "commentminer":
+                    cs = raw.get("_comments") or [raw]
+                    comments += len(cs)
+                    posts.update(c.get("post_url") or c.get("post_title") for c in cs if isinstance(c, dict) and (c.get("post_url") or c.get("post_title")))
+                elif str(raw.get("otw_status") or raw.get("is_open_to_work") or "").strip().lower() in ("yes", "true", "1"):
+                    otw += 1
+            t["facts"] = [["Comments", comments], ["Posts", len(posts)]] if tool == "commentminer" else [["Open to work", otw]]
+        else:
+            t["facts"] = [["Companies", _n(db, "SELECT COUNT(DISTINCT p.company_id) AS n FROM lead_sources s JOIN people p ON p.id=s.person_id WHERE s.tool=?", (tool,))]]
+        tools.append(t)
+    out["tools"], out["per_tool"] = tools, per
+    return out

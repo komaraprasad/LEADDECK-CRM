@@ -152,3 +152,25 @@ def test_overdue_uses_the_viewers_local_date():
     assert A.overview(db, 30, now=now)["tasks"]["overdue"] == 0
     assert A.overview(db, 30, now=now, local_today="2026-11-18")["tasks"]["overdue"] == 1
     assert A.overview(db, 30, now=now, local_today="junk")["tasks"]["overdue"] == 0
+
+
+def test_any_source_coverage_lead_types_top_lists_and_tool_cards(db):
+    import json
+    a = person(db, "A", email="a@x.com")
+    b = person(db, "B")
+    person(db, "C")
+    db.insert("contact_points", {"person_id": b, "kind": "phone", "value": "+10", "provider": "rr", "found_at": ago(1)})
+    db.execute("UPDATE people SET lead_type='candidate', location='Pune, Maharashtra, India' WHERE id=?", (a,))
+    db.execute("UPDATE people SET location='pune' WHERE id=?", (b,))
+    db.insert("lead_sources", {"tool": "commentminer", "kind": "person", "source_key": "k1", "person_id": a,
+                               "raw_payload": json.dumps({"_comments": [{"post_url": "p1"}, {"post_url": "p1"}, {"post_url": "p2"}]})})
+    db.insert("sync_runs", {"tool": "commentminer", "status": "ok", "finished": ago(1), "fetched": 3})
+    d = A.overview(db, 30, now=NOW)
+    assert d["leads"]["has_email"] == 1 and d["leads"]["has_phone"] == 1 and d["leads"]["has_email_rate"] == 33.3
+    assert {t["type"]: t["leads"] for t in d["lead_types"]}["candidate"] == 1
+    assert d["top_locations"][0] == {"name": "Pune", "leads": 2}
+    cm = next(t for t in d["tools"] if t["tool"] == "commentminer")
+    assert cm["leads"] == 1 and cm["last_status"] == "ok" and dict(cm["facts"]) == {"Comments": 3, "Posts": 2}
+    assert next(t for t in d["tools"] if t["tool"] == "jobharvest")["last_sync"] is None
+    s = d["sources"][0]
+    assert s["has_email"] == 1 and s["has_email_rate"] == 100.0 and s["enriched"] == 0

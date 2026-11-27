@@ -733,14 +733,13 @@ const LD = (() => {
   }
   function insights(d) {   // plain-language highlights, like the "insights" cards in HubSpot / Apollo reports
     const out = [], L = d.leads, cur = d.compare.current, prev = d.compare.previous;
-    if (d.sources.length > 1) {
-      const b = [...d.sources].sort((a, c) => (c.valid_email_rate || 0) - (a.valid_email_rate || 0) || c.avg_score - a.avg_score)[0];
-      out.push(['good', 'Best source', `${b.label} gives the most reachable leads: ${pc(b.valid_email_rate ?? 0)} have a valid email (average score ${b.avg_score}).`]);
-    }
+    const big = d.sources.filter(s => s.leads >= 10).sort((a, c) => (c.has_email_rate || 0) - (a.has_email_rate || 0));
+    if (big.length > 1 && (big[0].has_email_rate || 0) - (big[1].has_email_rate || 0) >= 5)   // only a clear winner on a fair sample
+      out.push(['good', 'Best source', `${big[0].label} gives the most reachable leads: ${pc(big[0].has_email_rate)} have an email (${nf(big[0].has_email)} of ${nf(big[0].leads)}).`]);
     const all = d.funnel.filter(f => !f.terminal); let worst = null;
-    for (let i = 1; i < all.length; i++) if (all[i - 1].reached) { const drop = all[i - 1].reached - all[i].reached; if (!worst || drop > worst.drop) worst = { from: all[i - 1], to: all[i], drop }; }
+    for (let i = 2; i < all.length; i++) if (all[i - 1].reached) { const drop = all[i - 1].reached - all[i].reached; if (!worst || drop > worst.drop) worst = { from: all[i - 1], to: all[i], drop }; }
     if (worst && worst.drop > 0) out.push(['warn', 'Biggest drop-off', `${nf(worst.drop)} leads stop between ${worst.from.label} and ${worst.to.label} (${pc(worst.to.of_previous ?? 0)} move on).`]);
-    if (L.total && L.valid_email_rate != null && L.valid_email_rate < 25) out.push(['info', 'Next step', `Only ${pc(L.valid_email_rate)} of leads have a valid email. Enriching a campaign raises this${d.enrichment.credits_per_valid_email ? ', at about ' + d.enrichment.credits_per_valid_email + ' credits per valid email' : ''}.`]);
+    if (L.total && L.valid_email_rate != null && L.valid_email_rate < 25) out.push(['info', 'Next step', `${pc(L.has_email_rate ?? 0)} of leads have an email, but only ${pc(L.valid_email_rate)} are verified. Enriching a campaign raises this${d.enrichment.credits_per_valid_email ? ', at about ' + d.enrichment.credits_per_valid_email + ' credits per valid email' : ''}.`]);
     if (cur.leads_added !== prev.leads_added) out.push(['info', 'Lead flow', `${nf(cur.leads_added)} new leads in the last ${d.days} days, compared with ${nf(prev.leads_added)} in the ${d.days} days before.`]);
     if (d.tasks.overdue) out.push(['bad', 'Overdue', `${nf(d.tasks.overdue)} follow-up task${d.tasks.overdue === 1 ? ' is' : 's are'} overdue.`]);
     if (!out.length) return null;
@@ -749,9 +748,9 @@ const LD = (() => {
   }
   function sourcesTable(src) {
     if (!src.length) return el('div', { class: 'empty' }, 'No leads imported yet. Run a sync first.');
-    src.forEach(s => { s.phone_rate = s.leads ? Math.round(1000 * s.with_phone / s.leads) / 10 : 0; });
+    src.forEach(s => { s.phone_rate = s.leads ? Math.round(1000 * (s.has_phone ?? s.with_phone) / s.leads) / 10 : 0; });
     const st = { key: 'leads' }, wrap = el('div'), total = src.reduce((a, s) => a + s.leads, 0);
-    const cols = [['leads', 'Leads', s => s.leads], ['valid_email_rate', 'Valid email', s => s.valid_email_rate || 0], ['phone_rate', 'Direct phone', s => s.phone_rate], ['avg_score', 'Avg. score', s => s.avg_score]];
+    const cols = [['leads', 'Leads', s => s.leads], ['has_email_rate', 'Has email', s => s.has_email_rate || 0], ['valid_email_rate', 'Verified email', s => s.valid_email_rate || 0], ['phone_rate', 'Has phone', s => s.phone_rate], ['enriched_rate', 'Enriched', s => s.enriched_rate || 0], ['avg_score', 'Avg. score', s => s.avg_score]];
     const best = Object.fromEntries(cols.map(([k, , f]) => [k, Math.max(...src.map(f))]));
     const top = (k, v) => v === best[k] && src.length > 1 && v > 0 ? el('span', { class: 'best' }, 'Best') : null;
     function draw() {
@@ -760,10 +759,12 @@ const LD = (() => {
       wrap.replaceChildren(tscroll(el('table', { class: 'cmp' }, el('thead', {}, el('tr', {}, el('th', {}, 'Tool'), ...cols.map(([k, l]) => th(k, l)))),
         el('tbody', {}, ...rows.map(s => el('tr', {}, el('td', { class: 'nw' }, el('b', {}, s.label)),
           el('td', {}, el('div', { class: 'cv' }, el('b', {}, nf(s.leads)), el('span', { class: 'mut' }, pc(Math.round(1000 * s.leads / total) / 10) + ' of all'), top('leads', s.leads)), meter(100 * s.leads / best.leads)),
+          el('td', {}, el('div', { class: 'cv' }, el('b', {}, pc(s.has_email_rate ?? 0)), el('span', { class: 'mut' }, nf(s.has_email || 0) + ' leads'), top('has_email_rate', s.has_email_rate || 0)), meter(s.has_email_rate)),
           el('td', {}, el('div', { class: 'cv' }, el('b', {}, pc(s.valid_email_rate ?? 0)), el('span', { class: 'mut' }, nf(s.valid_email) + ' leads'), top('valid_email_rate', s.valid_email_rate || 0)), meter(s.valid_email_rate)),
-          el('td', {}, el('div', { class: 'cv' }, el('b', {}, pc(s.phone_rate)), el('span', { class: 'mut' }, nf(s.with_phone) + ' leads'), top('phone_rate', s.phone_rate)), meter(s.phone_rate)),
+          el('td', {}, el('div', { class: 'cv' }, el('b', {}, pc(s.phone_rate)), el('span', { class: 'mut' }, nf(s.has_phone ?? s.with_phone) + ' leads'), top('phone_rate', s.phone_rate)), meter(s.phone_rate)),
+          el('td', {}, el('div', { class: 'cv' }, el('b', {}, pc(s.enriched_rate ?? 0)), el('span', { class: 'mut' }, nf(s.enriched || 0) + ' leads'), top('enriched_rate', s.enriched_rate || 0)), meter(s.enriched_rate)),
           el('td', {}, el('div', { class: 'cv' }, ringFor(Math.round(s.avg_score), 'sm'), top('avg_score', s.avg_score)))))))),
-        el('div', { class: 'mut', style: 'margin-top:10px;font-size:13px' }, 'Click a column heading to rank the tools by it. A lead found by two tools counts for both.'));
+        el('div', { class: 'mut', style: 'margin-top:10px;font-size:13px' }, 'Has email counts any email (from the tool or from enrichment); Verified means RocketReach checked it. Click a heading to rank the tools by it. A lead found by two tools counts for both.'));
     }
     draw(); return wrap;
   }
@@ -775,6 +776,20 @@ const LD = (() => {
       el('div', { class: 'leg row4' }, ...parts.map(([k, l, n]) => el('div', {}, el('i', { class: 'sw o-' + k }), el('span', {}, l), el('b', {}, nf(n)), el('span', { class: 'mut' }, pc(Math.round(1000 * n / t) / 10))))));
   }
 
+  function rankList(items, total, empty) {   // label · bar · count · share of all leads
+    if (!items.length) return el('div', { class: 'empty' }, empty);
+    const max = Math.max(...items.map(i => i[1]));
+    return el('div', { class: 'rk' }, ...items.map(([l, n]) => el('div', { class: 'rkr' }, el('div', { class: 'rkl', title: l }, l),
+      el('div', { class: 'rkb' }, el('i', { style: `width:${Math.max(2, 100 * n / max)}%` })), el('b', {}, nf(n)), el('span', { class: 'mut' }, total ? pc(Math.round(1000 * n / total) / 10) : ''))));
+  }
+  function toolCards(tools) {
+    return el('div', { class: 'tcs' }, ...tools.map(t => { const bad = t.last_status && t.last_status !== 'ok';
+      return el('div', { class: 'card tc' }, el('div', { class: 'row between' }, el('b', {}, t.label),
+        el('span', { class: 'pill ' + (!t.last_sync ? 'unk' : bad ? 'bad' : 'ok') }, !t.last_sync ? 'Never synced' : bad ? 'Last sync failed' : 'Synced')),
+        el('div', { class: 'tcn' }, el('span', { class: 'tnum' }, nf(t.leads)), el('span', { class: 'mut' }, ' leads')),
+        el('div', { class: 'tcf' }, ...t.facts.map(([k, v]) => el('div', {}, el('span', { class: 'mut' }, k), el('b', {}, nf(v))))),
+        el('div', { class: 'mut', style: 'font-size:12px;margin-top:10px' }, t.last_sync ? 'Last sync ' + when(t.last_sync) : el('a', { class: 'lnk', href: '/sync' }, 'Run a sync'))); }));
+  }
   async function analyticsPage() {
     const main = await shell('/analytics'), st = { days: 30 }, body = el('div');
     const range = el('div', { class: 'seg-ctl', role: 'tablist', 'aria-label': 'Time range' });
@@ -784,7 +799,7 @@ const LD = (() => {
       const L = d.leads, E = d.enrichment, C = d.crm, T = d.tasks, O = d.outreach, Q = d.quality, cur = d.compare.current, prev = d.compare.previous, days = d.days;
       // funnel: reached, conversion from the stage before, and the biggest drop highlighted
       const stages = d.funnel.filter(f => !f.terminal), funMax = Math.max(1, ...stages.map(f => f.reached));
-      let worstI = -1, worstDrop = 0; stages.forEach((f, i) => { if (i && stages[i - 1].reached - f.reached > worstDrop) { worstDrop = stages[i - 1].reached - f.reached; worstI = i; } });
+      let worstI = -1, worstDrop = 0; stages.forEach((f, i) => { if (i > 1 && stages[i - 1].reached - f.reached > worstDrop) { worstDrop = stages[i - 1].reached - f.reached; worstI = i; } });
       const funnel = el('div', { class: 'fun' }, ...stages.map((f, i) => el('div', { class: 'fr' + (i === worstI ? ' drop' : '') }, el('div', { class: 'fl' }, f.label),
         el('div', { class: 'ft' }, (() => { const b = el('div', { class: 'fb s-' + f.stage, style: `width:${Math.max(f.reached ? 1.5 : 0, 100 * f.reached / funMax)}%`, tabindex: '0', 'aria-label': `${f.label}: ${f.reached} reached, ${f.current} there now` });
           tip(b, `${f.label}: ${f.reached} reached · ${f.current} there now${f.of_previous != null ? ' · ' + pc(f.of_previous) + ' of the stage before' : ''}`); return b; })()),
@@ -793,7 +808,7 @@ const LD = (() => {
       const qt = Q.high + Q.medium + Q.low, qs = [['high', 'High', Q.high], ['medium', 'Medium', Q.medium], ['low', 'Low', Q.low]];
       const seg = el('div', { class: 'seg', role: 'img', 'aria-label': `Contact quality: ${Q.high} high, ${Q.medium} medium, ${Q.low} low` }, ...qs.filter(x => x[2]).map(([k, l, n]) => { const b = el('div', { class: 'sg q-' + k, style: `flex:${n}`, tabindex: '0' }, n / qt > .09 ? nf(n) : ''); tip(b, `${l}: ${nf(n)} leads (${pc(Math.round(1000 * n / qt) / 10)})`); return b; }));
       const outreach = O.connected ? el('div', {}, el('div', { class: 'kpis small' }, kpi('Emails sent', O.sent, 'last ' + days + ' days'), kpi('Reply rate', pc(O.reply_rate), nf(O.replies) + ' replies'), kpi('Bounce rate', pc(O.bounce_rate), nf(O.bounces) + ' bounced', O.bounce_rate > 5 ? 'warn' : ''), kpi('Unsubscribed', pc(O.unsubscribe_rate), nf(O.unsubscribes) + ' people')), columnChart(O.by_day, 'sent', 'emails', 'Emails sent per day', true))
-        : el('div', { class: 'oe' }, el('span', { class: 'eico' }, icon('campaigns')), el('div', {}, el('b', {}, 'No emails recorded yet'), el('div', { class: 'mut' }, 'Sent, reply, bounce and unsubscribe rates appear here once an outreach tool sends events to LeadDeck. Nothing is estimated in the meantime.')));
+        : null;
       const owners = C.owners.length ? tscroll(el('table', {}, el('thead', {}, el('tr', {}, ...['Owner', 'Leads', 'Open tasks'].map(h => el('th', {}, h)))),
         el('tbody', {}, ...C.owners.map(o => el('tr', {}, el('td', {}, o.owner || el('span', { class: 'mut' }, 'Unassigned')), el('td', {}, nf(o.leads)), el('td', {}, nf(o.open_tasks))))))) : el('div', { class: 'empty' }, 'No leads in the pipeline yet.');
       const sec = (t, s) => el('div', { class: 'sec' }, el('h3', {}, t), s ? el('span', { class: 'mut' }, s) : null);
@@ -802,30 +817,35 @@ const LD = (() => {
         sec('Headline numbers', 'Arrows compare the last ' + days + ' days with the ' + days + ' days before'),
         el('div', { class: 'kpis k4' },
           kpi2({ label: 'New leads', value: cur.leads_added, sub: nf(L.total) + ' leads in total', dl: delta(cur.leads_added, prev.leads_added, { days }), sp: spark(L.by_day.map(r => r.added)) }),
-          kpi2({ label: 'Valid email', value: pc(L.valid_email_rate), sub: nf(L.valid_email) + ' of ' + nf(L.total) + ' leads', bar: L.valid_email_rate, hint: 'Share of all leads with an email the provider checked as valid' }),
-          kpi2({ label: 'Direct phone', value: pc(L.phone_rate), sub: nf(L.with_phone) + ' of ' + nf(L.total) + ' leads', bar: L.phone_rate }),
+          kpi2({ label: 'Has email', value: pc(L.has_email_rate), sub: nf(L.has_email) + ' of ' + nf(L.total) + ' · ' + nf(L.valid_email) + ' verified', bar: L.has_email_rate, hint: 'Leads with any email, from the tool or from enrichment. Verified = RocketReach checked it as valid.' }),
+          kpi2({ label: 'Has phone', value: pc(L.has_phone_rate), sub: nf(L.has_phone) + ' of ' + nf(L.total) + ' leads', bar: L.has_phone_rate }),
           kpi2({ label: 'Meetings booked', value: cur.meetings_booked, sub: nf(C.events_in_period) + ' CRM updates', dl: delta(cur.meetings_booked, prev.meetings_booked, { days }) }),
           kpi2({ label: 'Credits used', value: cur.credits, sub: nf(cur.lookups) + ' lookups', dl: delta(cur.credits, prev.credits, { days, good: 'none' }), sp: spark(E.by_day.map(r => r.credits)) }),
           kpi2({ label: 'Match rate', value: pc(cur.match_rate), sub: 'lookups that found the person', dl: delta(cur.match_rate, prev.match_rate, { days }), bar: cur.match_rate }),
           kpi2({ label: 'Credits per valid email', value: cur.credits_per_valid_email == null ? '—' : String(cur.credits_per_valid_email), sub: nf(cur.valid_emails_found) + ' valid emails found · lower is better', dl: delta(cur.credits_per_valid_email, prev.credits_per_valid_email, { days, good: 'down' }) }),
           kpi2({ label: 'Open tasks', value: T.open, sub: T.overdue ? nf(T.overdue) + ' overdue' : 'none overdue', tone: T.overdue ? 'warn' : '', dl: el('span', { class: 'dl flat' }, nf(cur.tasks_done) + ' done in ' + days + ' days') })),
-        el('div', { class: 'card' }, columnChart(L.by_day, 'added', 'new leads', 'Lead flow: new leads per day', true),
+        el('div', { class: 'card' }, columnChart(L.by_day, 'added', 'new leads', 'New leads per day (date the tool collected them)', true),
           el('div', { class: 'mut', style: 'margin-top:8px;font-size:13px' }, nf(prev.leads_added) + ' new leads in the ' + days + ' days before.')),
         sec('Pipeline and reachability'),
         el('div', { class: 'grid2' },
-          el('div', { class: 'card' }, el('h2', {}, 'Pipeline funnel'), el('div', { class: 'mut', style: 'margin:-6px 0 12px' }, 'Leads that ever reached each stage. The % is the share that moved on from the stage before; the biggest drop is marked in red.'), funnel, ended,
+          el('div', { class: 'card' }, el('h2', {}, 'Pipeline funnel'), el('div', { class: 'mut', style: 'margin:-6px 0 12px' }, 'Leads that ever reached each stage. The % is the share that moved on from the stage before; the biggest drop after enrichment is marked in red.'), funnel, ended,
             C.stale ? el('div', { class: 'msg warn', style: 'margin-top:14px' }, nf(C.stale) + (C.stale === 1 ? ' lead has' : ' leads have') + ' had no activity for too long. ', el('a', { class: 'lnk', href: '/pipeline' }, 'Open the CRM board')) : null),
           el('div', { class: 'card' }, el('h2', {}, 'Contact quality'), el('div', { class: 'mut', style: 'margin:-6px 0 14px' }, 'How reachable your leads are. It does not measure fit.'), qt ? seg : el('div', { class: 'empty' }, 'No leads yet.'),
             el('div', { class: 'leg' }, ...qs.map(([k, l, n]) => el('div', {}, el('i', { class: 'sw q-' + k }), el('span', {}, l), el('b', {}, nf(n)), el('span', { class: 'mut' }, qt ? pc(Math.round(1000 * n / qt) / 10) : '')))),
             el('div', { class: 'mut', style: 'margin-top:12px;font-size:13px' }, 'High: score 50+ (a verified email). Medium: 20–49. Low: under 20.'))),
-        sec('Sources'),
+        sec('Sources', 'What each tool has brought in'),
+        toolCards(d.tools || []),
         el('div', { class: 'card' }, el('h2', {}, 'Compare the four tools'), sourcesTable(d.sources)),
+        sec('Who your leads are'),
+        el('div', { class: 'grid3' },
+          el('div', { class: 'card' }, el('h2', {}, 'Lead type'), rankList((d.lead_types || []).map(t => [({ employer_contact: 'Employer contact', candidate: 'Candidate' })[t.type] || 'Unknown', t.leads]), L.total, 'No leads yet.')),
+          el('div', { class: 'card' }, el('h2', {}, 'Top companies'), rankList((d.top_companies || []).map(c => [c.name, c.leads]), L.total, 'No company names yet.')),
+          el('div', { class: 'card' }, el('h2', {}, 'Top locations'), rankList((d.top_locations || []).map(c => [c.name, c.leads]), L.total, 'No locations yet.'))),
         sec('Enrichment and activity'),
         el('div', { class: 'grid2' },
           el('div', { class: 'card' }, el('h2', {}, 'Lookup results'), el('div', { class: 'mut', style: 'margin:-6px 0 14px' }, nf(cur.lookups) + ' lookups in the last ' + days + ' days'), outcomes(E), el('div', { style: 'margin-top:18px' }, columnChart(E.by_day, 'credits', 'credits', 'Credits used per day'))),
           el('div', { class: 'card' }, columnChart(C.activity_by_day, 'events', 'events', 'CRM activity per day'), el('h2', { style: 'margin-top:18px' }, 'Team'), owners)),
-        sec('Outreach'),
-        el('div', { class: 'card' }, outreach),
+        outreach ? sec('Outreach') : '', outreach ? el('div', { class: 'card' }, outreach) : el('div', { class: 'mut oline' }, icon('campaigns'), 'Outreach: no emails recorded yet. Sent, reply and bounce rates appear here once an outreach tool is connected.'),
         el('div', { class: 'mut foot' }, 'Credits are counted by LeadDeck (one per lookup that returned data); compare them with your RocketReach account. Figures are computed from LeadDeck’s own data when you open this page. Updated ' + when(d.generated_at) + '.'));
     }
     main.append(el('div', { class: 'row between', style: 'flex-wrap:wrap;gap:12px' }, el('div', {}, el('h1', {}, 'Analytics'), el('div', { class: 'sub' }, 'How your leads, enrichment and pipeline are doing, and how that compares with the period before.')), range), body);
