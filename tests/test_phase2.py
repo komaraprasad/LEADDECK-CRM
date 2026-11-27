@@ -613,3 +613,32 @@ def test_commentminer_groups_comments_emails_and_type(db):
     assert pick_emails("a@gmail.com", ["b@else.com"], "https://sampleshaper.com") == ("a@gmail.com", ["b@else.com"])
     assert lead_type_from_headline("Bench Sales Recruiter") == "employer_contact"
     assert lead_type_from_headline("Java Developer | Spring") == "unknown"
+
+
+def test_sales_navigator_link_is_kept_and_not_sent_to_rocketreach():
+    from app.normalize import normalize_person_url
+    assert normalize_person_url("https://linkedin.com/sales/lead/ACwAAExampleID1,NAME_SEARCH,xYz") == "https://www.linkedin.com/sales/lead/ACwAAExampleID1"
+    assert normalize_person_url("https://www.linkedin.com/in/Some-One/") == "https://www.linkedin.com/in/some-one"
+    seen = []
+    rr = RocketReach("k", http=lambda url, h: (seen.append(url), (200, '{"status":"complete","emails":[{"email":"a@x.com"}]}'))[1])
+    rr.lookup({"linkedin_url": "https://www.linkedin.com/sales/lead/ACwAAExampleID1", "full_name": "Ana B", "company_name": "Acme"})
+    assert "sales" not in seen[0] and "name=Ana" in seen[0]          # matched on name + company instead
+
+
+def test_talentpulse_candidate_details(db):
+    from app import leads as L
+    from app.mappers.talentpulse import map_payload
+    from app.merge import upsert_records
+    row = {"id": 7, "full_name": "Ana B", "linkedin_url": "https://linkedin.com/sales/lead/ACwAAExampleID2", "current_title": "Python Developer",
+           "headline": "Entry-level Python dev, Django and SQL", "company_name": "Sample Academy", "email": "ana.b@gmail.com",
+           "email_status": "From profile", "skills": ["Python", "Django"], "years_experience": 1.0, "otw_status": "Yes",
+           "signal_type": "Open to Work", "qualification_status": "Qualified", "search_role": "Python Developer", "signal_date": "Not available"}
+    upsert_records(db, map_payload({"leads": [row]}).records)
+    pid = db.one("SELECT id FROM people WHERE full_name='Ana B'")["id"]
+    r = L.export_rows(db, ids=[pid])[0]
+    assert r["linkedin_url"] == "https://www.linkedin.com/sales/lead/ACwAAExampleID2"
+    assert (r["search_role"], r["experience"], r["skills"], r["open_to_work"], r["qualification"], r["email_status"]) == \
+           ("Python Developer", "1 yr", "Python, Django", "Yes", "Qualified", "From profile")
+    from app.exporter import _value, TOOL_COLUMNS
+    assert _value(r, "headline") == "Entry-level Python dev, Django and SQL" and _value(r, "role") == "Python Developer"
+    assert "company_industry" not in TOOL_COLUMNS["talentpulse"] and "skills" in TOOL_COLUMNS["talentpulse"]

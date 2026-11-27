@@ -14,7 +14,7 @@ PERSON = "https://www.linkedin.com/in/jane-doe"
 def test_person_url_variants_collapse(url):
     assert normalize_person_url(url) == PERSON
 
-@pytest.mark.parametrize("url", [None, "", "  ", "https://www.linkedin.com/sales/lead/ACwAAB123,NAME", "https://example.com/in/jane", "https://www.linkedin.com/company/acme", "not a url"])
+@pytest.mark.parametrize("url", [None, "", "  ", "https://example.com/in/jane", "https://www.linkedin.com/company/acme", "not a url"])
 def test_person_url_non_profiles_are_none(url):
     assert normalize_person_url(url) is None
 
@@ -33,3 +33,8 @@ def test_domain():
 def test_name():
     assert normalize_name("  José  Ñúñez ") == "jose nunez"
     assert normalize_name(None) == ""
+
+
+def test_sales_navigator_lead_link_is_a_person_key():
+    # TalentPulse sends Sales Navigator links; the lead ID is case-sensitive and kept, the search suffix dropped
+    assert normalize_person_url("https://www.linkedin.com/sales/lead/ACwAAB123,NAME") == "https://www.linkedin.com/sales/lead/ACwAAB123"

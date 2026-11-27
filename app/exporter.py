@@ -15,12 +15,14 @@ from app.config import TOOL_LABELS
 
 # (key, header, group, width). Order = order in every sheet.
 COLUMNS = [
-    ("display_name", "Name", "lead", 24), ("name_source", "Name Source", "lead", 13), ("role", "Title / Headline", "lead", 38),
-    ("lead_type", "Lead Type", "lead", 16), ("linkedin_url", "LinkedIn", "lead", 16),
+    ("display_name", "Name", "lead", 24), ("name_source", "Name Source", "lead", 13), ("role", "Title", "lead", 30),
+    ("headline", "Headline", "lead", 40), ("lead_type", "Lead Type", "lead", 16), ("linkedin_url", "LinkedIn", "lead", 16),
     ("company_name", "Company", "company", 26), ("company_industry", "Company Industry", "company", 24), ("company_size", "Company Size", "company", 13),
     ("email", "Email", "contact", 32), ("email_status", "Email Status", "contact", 12), ("personal_email", "Personal Email", "contact", 28),
     ("all_emails", "All Emails", "contact", 42), ("comment_emails", "Other Emails In Comments", "contact", 34),
     ("phone", "Phone", "contact", 18), ("all_phones", "All Phones", "contact", 32), ("company_phone", "Company Phone", "contact", 18),
+    ("search_role", "Searched Role", "candidate", 22), ("experience", "Experience", "candidate", 11), ("skills", "Skills", "candidate", 36),
+    ("open_to_work", "Open To Work", "candidate", 22), ("qualification", "Qualification", "candidate", 14),
     ("location", "Location", "location", 24), ("job_location", "Job Location", "location", 26),
     ("tools", "Found By", "source", 18), ("hiring_for", "Hiring For", "source", 30), ("job_url", "Job Link", "source", 12),
     ("post_title", "Commented On Post", "source", 34), ("post_url", "Post Link", "source", 12), ("comment", "Their Comment", "source", 46),
@@ -30,19 +32,22 @@ COLUMNS = [
 EXPORT_COLUMNS = [(k, h) for k, h, _, _ in COLUMNS]     # CSV column set (and kept for callers/tests)
 _COL = {k: (h, g, w) for k, h, g, w in COLUMNS}
 
-_BASE = ["display_name", "name_source", "role", "lead_type", "linkedin_url", "company_name", "company_industry", "company_size",
+_BASE = ["display_name", "name_source", "role", "headline", "lead_type", "linkedin_url", "company_name", "company_industry", "company_size",
          "email", "email_status", "personal_email", "all_emails", "phone", "all_phones", "company_phone", "location"]
 _STATUS = ["tools", "do_not_contact_text", "last_seen"]
 TOOL_COLUMNS = {
     "hiringbadge": _BASE + _STATUS,
     "jobharvest": _BASE + ["job_location", "hiring_for", "job_url"] + _STATUS,
     "commentminer": _BASE[:12] + ["comment_emails"] + _BASE[12:] + ["post_title", "post_url", "comment", "comment_count"] + _STATUS,
-    "talentpulse": _BASE + _STATUS,
+    # candidates: their skills and availability matter; employer industry/size does not
+    "talentpulse": [k for k in _BASE if k not in ("company_industry", "company_size")][:7]
+                   + ["search_role", "experience", "skills", "open_to_work", "qualification"]
+                   + [k for k in _BASE if k not in ("company_industry", "company_size")][7:] + _STATUS,
 }
 # Shown even when empty in a sheet: an empty Email/Phone column tells the reader what is still missing.
 _ALWAYS = {"display_name", "role", "company_name", "email", "phone", "linkedin_url", "tools"}
 _LINKS = {"linkedin_url": "Open profile", "job_url": "Open job", "post_url": "Open post"}
-_GROUP_FILL = {"lead": "1E3A8A", "company": "0F766E", "contact": "7C3AED", "location": "B45309", "source": "BE185D", "status": "475569"}
+_GROUP_FILL = {"lead": "1E3A8A", "company": "0F766E", "contact": "7C3AED", "location": "B45309", "source": "BE185D", "status": "475569", "candidate": "0369A1"}
 _DANGEROUS = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -68,6 +73,9 @@ def _value(r: dict, k: str):
         return r.get("display_name") or r.get("full_name") or ""
     if k == "role":
         return r.get("role") or r.get("title") or r.get("headline") or ""
+    if k == "headline":   # only when it says something the Title column does not already show
+        t, h = (r.get("title") or "").strip(), (r.get("headline") or "").strip()
+        return h if t and h and h.lower() != t.lower() else ""
     v = r.get(k)
     if k == "tools":
         names = v if isinstance(v, list) else [t.strip() for t in str(v or "").split(",") if t.strip()]
@@ -153,7 +161,7 @@ def build_xlsx(rows: list[dict]) -> bytes:
         summary.append([name, len(rs), has(rs, "email"), has(rs, "phone"), sum(1 for r in rs if r.get("lead_type") == "employer_contact")])
     summary.append([])
     notes = ["The other tabs list the leads; header colours: blue = lead, green = company, purple = contact, "
-             "amber = location, pink = where it was found, grey = status.",
+             "amber = location, light blue = candidate details, pink = where it was found, grey = status.",
              "Columns a sheet has no data for are left out. Links say Open profile / Open job / Open post."]
     if with_all and len(tools_present) > 1:
         notes.insert(0, "A lead found by several tools is on each of those tools' sheets.")

@@ -40,7 +40,18 @@ def _slug_after(url: str | None, marker: str) -> str | None:
 
 def normalize_person_url(url: str | None) -> str | None:
     slug = _slug_after(url, "in")
-    return f"https://www.linkedin.com/in/{slug}" if slug else None
+    if slug:
+        return f"https://www.linkedin.com/in/{slug}"
+    # Sales Navigator lead links (TalentPulse): linkedin.com/sales/lead/<ID>,NAME_SEARCH,... The ID is
+    # case-sensitive and identifies the person, so keep it as-is (only the search suffix is dropped).
+    p = _parse(url)
+    if p is not None:
+        segs = _segments(p)
+        if len(segs) >= 3 and segs[0].lower() == "sales" and segs[1].lower() in ("lead", "people"):
+            lid = segs[2].split(",")[0].strip()
+            if lid:
+                return f"https://www.linkedin.com/sales/lead/{lid}"
+    return None
 
 
 def normalize_company_url(url: str | None) -> str | None:

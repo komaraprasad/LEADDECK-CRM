@@ -158,7 +158,8 @@ class RocketReach(Provider):
             raise ProviderError("RocketReach returned a non-JSON response")
 
     def lookup(self, person: dict) -> ProviderResult:
-        if person.get("linkedin_url"):
+        # a Sales Navigator link (linkedin.com/sales/lead/...) is not a public profile URL RocketReach can match
+        if person.get("linkedin_url") and "/sales/" not in person["linkedin_url"]:
             params = {"linkedin_url": person["linkedin_url"]}
         elif person.get("full_name") and person.get("company_name"):
             params = {"name": person["full_name"], "current_employer": person["company_name"]}

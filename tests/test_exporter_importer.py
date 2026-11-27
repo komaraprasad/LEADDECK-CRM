@@ -8,7 +8,7 @@ def test_formula_neutralized_csv_and_xlsx():
     rows = [{"full_name": "=HYPERLINK(\"http://x\",\"y\")", "headline": "+1+1", "title": "-2", "company_name": "@SUM(A1)", "email": "a@b.co"}]
     got = list(csv.reader(io.StringIO(build_csv(rows).decode("utf-8-sig"))))
     c = {h: v for h, v in zip(got[0], got[1])}
-    assert c["Name"].startswith("'=") and c["Title / Headline"] == "'-2" and c["Company"] == "'@SUM(A1)"
+    assert c["Name"].startswith("'=") and c["Title"] == "'-2" and c["Headline"] == "'+1+1" and c["Company"] == "'@SUM(A1)"
     wb = load_workbook(io.BytesIO(build_xlsx(rows)))
     assert wb.sheetnames == ["All Leads", "Summary"] and wb.active.title == "All Leads"
     ws = wb["All Leads"]

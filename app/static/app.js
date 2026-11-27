@@ -26,6 +26,11 @@ const LD = (() => {
   const jobLoc = r => r.job_location ? el('div', { title: 'Where the job they are hiring for is. Their own location is not known yet (enrich to get it).' },
     el('div', {}, r.job_location),
     el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px' }, '💼 Job: ', r.hiring_for ? (r.job_url ? el('a', { class: 'lnk', href: r.job_url, target: '_blank', rel: 'noopener noreferrer', title: 'Open the job on LinkedIn' }, r.hiring_for + ' ↗') : r.hiring_for) : 'location')) : '';
+  // TalentPulse candidates: searched role · experience · open to work, under the title
+  const candLine = r => {
+    const bits = [r.search_role, r.experience, r.open_to_work ? (r.open_to_work.startsWith('Yes') ? 'Open to work' : 'Not open to work') : ''].filter(Boolean);
+    return bits.length ? el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', title: r.skills ? 'Skills: ' + r.skills : '' }, '🎯 ' + bits.join(' · ')) : null;
+  };
   const typeTag = t => el('span', { class: 'tag ' + ({ candidate: 'cand', employer_contact: 'emp' }[t] || 'unk') }, (t || 'unknown').replace('_', ' '));
   const fmtBytes = n => n == null ? 'n/a' : n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
   const when = s => s ? s.replace('T', ' ').slice(0, 16) + ' UTC' : '—';
@@ -238,7 +243,8 @@ const LD = (() => {
             r.linkedin_url ? el('a', { class: 'lnk ext', href: r.linkedin_url, target: '_blank', rel: 'noopener noreferrer', title: 'Open LinkedIn profile', 'aria-label': 'LinkedIn profile of ' + (nameOf(r) || 'lead') }, ' ↗') : null,
             r.match_confidence === 'low' ? el('span', { class: 'tag bad', title: 'No profile URL: matched by name and company' }, 'low match') : null,
             r.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null))),
-          el('td', {}, r.title || r.headline || '', r.comment_count ? el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', title: (r.post_title ? 'Latest: ' + r.post_title : 'LinkedIn comments') }, '💬 ' + r.comment_count + ' comment' + (r.comment_count > 1 ? 's' : '')) : null),
+          el('td', {}, r.title || r.headline || '', r.comment_count ? el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', title: (r.post_title ? 'Latest: ' + r.post_title : 'LinkedIn comments') }, '💬 ' + r.comment_count + ' comment' + (r.comment_count > 1 ? 's' : '')) : null,
+            candLine(r)),
           el('td', {}, r.company_name || ''), el('td', {}, r.location || jobLoc(r)),
           el('td', { class: 'nw' }, r.email || '', r.email_status === 'valid' ? el('span', { class: 'tag cand', title: 'Verified by the enrichment provider' }, 'verified') : null), el('td', { class: 'nw' }, phoneCell(r)),
           el('td', {}, qualityTag(r)), el('td', { class: 'nw' }, stagePill(r.stage), r.owner ? initials(r.owner) : null),
@@ -562,6 +568,9 @@ const LD = (() => {
             d.comment_count > 1 ? ' · ' + d.comment_count + ' comments' : null,
             d.comment ? el('div', { style: 'margin-top:4px;padding:6px 10px;border-left:3px solid #c7d2fe;font-style:italic;white-space:pre-wrap;max-height:7.5em;overflow:auto' }, '“' + d.comment + '”') : null,
             d.comment_emails ? el('div', { style: 'margin-top:4px', title: 'Written in their comments. May be theirs or a colleague’s: check before using.' }, '✉ Other emails in their comments: ', d.comment_emails) : null) : null,
+          d.headline && d.title && d.headline.toLowerCase() !== d.title.toLowerCase() ? el('div', { class: 'mut', style: 'font-size:13px;font-style:italic' }, d.headline) : null,
+          (d.search_role || d.experience || d.open_to_work) ? el('div', { class: 'mut', style: 'font-size:13px' }, '🎯 ' + [d.search_role ? 'Searched for: ' + d.search_role : '', d.experience ? d.experience + ' experience' : '', d.open_to_work ? 'Open to work: ' + d.open_to_work : '', d.qualification].filter(Boolean).join(' · ')) : null,
+          d.skills ? el('div', { class: 'mut', style: 'font-size:13px' }, '🛠 Skills: ' + d.skills) : null,
           d.hiring_for ? el('div', { class: 'mut', style: 'font-size:13px' }, '💼 Hiring for: ',d.job_url ? el('a', { class: 'lnk', href: d.job_url, target: '_blank', rel: 'noopener noreferrer' }, d.hiring_for + ' ↗') : d.hiring_for) : null,
           (d.company_industry || d.company_size) ? el('div', { class: 'mut', style: 'font-size:13px' }, [d.company_industry, d.company_size ? (/employee/i.test(d.company_size) ? d.company_size : d.company_size + ' employees') : null].filter(Boolean).join(' · ')) : null,
           d.linkedin_url ? el('a', { class: 'lnk', href: d.linkedin_url, target: '_blank', rel: 'noopener noreferrer' }, 'LinkedIn profile ↗') : null),

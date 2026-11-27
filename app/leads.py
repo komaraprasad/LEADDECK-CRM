@@ -111,6 +111,60 @@ def _post_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
             r["post_title"] = c["title"] or ("LinkedIn post" if c["url"] else "")
             r["post_url"], r["comment"], r["comment_count"] = c["url"], c["comment"], c["n"]
             r["comment_emails"] = "; ".join(e for e in c["emails"] if e != (r.get("email") or "").lower())
+    _candidate_context(db, rows, ids, ph)
+
+
+_NA = {"", "not available", "n/a", "na", "none", "null", "unknown", "[]"}
+
+
+def _clean(v) -> str:
+    if isinstance(v, list):
+        return ", ".join(str(x).strip() for x in v if str(x).strip())
+    s = str(v or "").strip()
+    if s.startswith("[") and s.endswith("]"):   # "['Python', 'Django']" as text
+        s = ", ".join(x.strip().strip("'\"") for x in s[1:-1].split(",") if x.strip().strip("'\""))
+    return "" if s.lower() in _NA else s
+
+
+def _candidate_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
+    """TalentPulse candidates: searched role, years of experience, skills, open-to-work (and why), qualification,
+    and where the tool's email came from. Display/export only."""
+    for r in rows:
+        for k in ("search_role", "experience", "skills", "open_to_work", "qualification"):
+            r.setdefault(k, "")
+    found: dict[int, dict] = {}
+    for s in db.query(f"SELECT person_id, raw_payload FROM lead_sources WHERE tool='talentpulse' AND kind='person' "
+                      f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", ids):
+        if s["person_id"] in found:
+            continue
+        try:
+            raw = json.loads(s["raw_payload"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(raw, dict):
+            found[s["person_id"]] = raw
+    for r in rows:
+        raw = found.get(r["id"])
+        if not raw:
+            continue
+        g = lambda *ks: next((_clean(raw.get(k)) for k in ks if _clean(raw.get(k))), "")
+        r["search_role"] = g("search_role", "target_role")
+        yrs = g("years_experience", "experience_years")
+        try:
+            f = float(yrs)
+            r["experience"] = (str(int(f)) if f == int(f) else str(round(f, 1))) + (" yr" if f == 1 else " yrs")
+        except ValueError:
+            r["experience"] = yrs
+        r["skills"] = g("skills", "relevant_skills")
+        otw = g("otw_status", "is_open_to_work")
+        if otw.lower() in ("yes", "true", "1"):
+            why = g("signal_type")
+            r["open_to_work"] = "Yes" + (" (" + why + ")" if why and why.lower() != "open to work" else "")
+        elif otw:
+            r["open_to_work"] = "No" if otw.lower() in ("no", "false", "0") else otw
+        r["qualification"] = g("qualification_status")
+        if not r.get("email_status") and r.get("email"):
+            r["email_status"] = g("email_status")   # e.g. "From profile"
 
 
 def quality_band(score: int) -> str:
