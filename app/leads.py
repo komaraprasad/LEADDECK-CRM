@@ -83,6 +83,7 @@ def _post_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
     comments they left. Display/export only."""
     for r in rows:
         r.setdefault("post_title", ""); r.setdefault("post_url", ""); r.setdefault("comment", ""); r.setdefault("comment_count", 0)
+        r.setdefault("all_comments", ""); r.setdefault("latest_interaction", ""); r.setdefault("tool_emails", "")
     found: dict[int, dict] = {}
     for s in db.query(f"SELECT person_id, raw_payload FROM lead_sources WHERE tool='commentminer' AND kind='person' "
                       f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", ids):
@@ -92,11 +93,15 @@ def _post_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
             continue
         if not isinstance(raw, dict):
             continue
-        cur = found.setdefault(s["person_id"], {"n": 0, "emails": []})
+        cur = found.setdefault(s["person_id"], {"n": 0, "emails": [], "mine": [], "all": []})
+        for e in raw.get("_emails") or []:
+            if isinstance(e, str) and e not in cur["mine"]:
+                cur["mine"].append(e)
         # grouped records carry every comment in _comments; older records were one comment each
         comments = raw["_comments"] if isinstance(raw.get("_comments"), list) else [raw]
         comments = [c for c in comments if isinstance(c, dict)]
         cur["n"] += len(comments)
+        cur["all"] += comments
         for e in raw.get("_comment_emails") or []:
             if isinstance(e, str) and e not in cur["emails"]:
                 cur["emails"].append(e)
@@ -110,7 +115,15 @@ def _post_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
         if c and "url" in c:
             r["post_title"] = c["title"] or ("LinkedIn post" if c["url"] else "")
             r["post_url"], r["comment"], r["comment_count"] = c["url"], c["comment"], c["n"]
-            r["comment_emails"] = "; ".join(e for e in c["emails"] if e != (r.get("email") or "").lower())
+            mine = c["mine"] or ([r["email"].lower()] if r.get("email") else [])
+            r["tool_emails"] = ", ".join(mine)
+            r["comment_emails"] = "; ".join(e for e in c["emails"] if e not in mine)
+            dated = sorted(c["all"], key=lambda x: str(x.get("commented_at") or ""), reverse=True)
+            r["latest_interaction"] = str(dated[0].get("commented_at") or "") if dated else ""
+            r["all_comments"] = "\n".join(
+                "• " + str(x.get("comment_text") or "").strip()
+                + (" (on: " + _post_title(str(x.get("post_title") or "")) + ")" if _post_title(str(x.get("post_title") or "")) else "")
+                for x in dated if str(x.get("comment_text") or "").strip())[:4000]
     _candidate_context(db, rows, ids, ph)
 
 
@@ -236,7 +249,7 @@ def _where(f: dict):
 
 
 _SELECT = ("SELECT p.id, p.full_name, p.headline, p.title, p.location, p.linkedin_url, p.email, p.phone, p.lead_type, "
-           "p.match_confidence, p.do_not_contact, p.first_seen, p.last_seen, c.name AS company_name, c.linkedin_url AS company_url, c.industry AS company_industry, c.size AS company_size, "
+           "p.match_confidence, p.do_not_contact, p.first_seen, p.last_seen, c.name AS company_name, c.linkedin_url AS company_url, c.website AS company_website, c.industry AS company_industry, c.size AS company_size, "
            f"{_STAGE_SQL} AS stage, cl.owner_email AS owner, {SCORE_SQL} AS score, "
            # an enrichment provider already answered for this lead (found, not found or wrong person)
            "CASE WHEN EXISTS (SELECT 1 FROM enrichment_items ei WHERE ei.person_id = p.id "

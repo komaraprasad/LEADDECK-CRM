@@ -607,7 +607,10 @@ def test_commentminer_groups_comments_emails_and_type(db):
     pid = db.one("SELECT id FROM people WHERE linkedin_url LIKE ?", ("%dee-p%",))["id"]
     row = L.export_rows(db, ids=[pid])[0]
     assert row["comment_count"] == 2 and row["post_title"] == "Post B"
-    assert row["comment_emails"] == "pat@othervendor.com; dee.p.recruits@gmail.com"
+    assert row["comment_emails"] == "pat@othervendor.com"                         # only in comments: maybe a colleague's
+    assert row["tool_emails"] == "dee@sampleshaper.com, dee.p.recruits@gmail.com"  # the lead's own, main first
+    assert "on: Post B" in row["all_comments"] and "on: Post A" in row["all_comments"]
+    assert row["latest_interaction"].startswith("2026-11-25")
     # a work email given by the tool is never replaced; nothing on their domain -> keep the tool's email
     assert pick_emails("a@vendor.com", ["x@sampleshaper.com"], "https://sampleshaper.com")[0] == "a@vendor.com"
     assert pick_emails("a@gmail.com", ["b@else.com"], "https://sampleshaper.com") == ("a@gmail.com", ["b@else.com"])
@@ -654,3 +657,15 @@ def test_tool_email_kept_when_provider_finds_others_and_status_matches_it(db):
     assert row["email_status"] == ""                              # no provider checked THIS address
     assert row["all_emails"].startswith("ana.b@gmail.com (from tool)")
     assert "ana@acme.example (work)" in row["all_emails"] and "ana.b2@gmail.com (personal)" in row["all_emails"]
+
+
+
+def test_commentminer_email_field_with_several_addresses():
+    from app.mappers.commentminer import split_emails, map_payload
+    main, others, mine = split_emails("babu@samplevend.com, babu.t@gmail.com", ["babu@samplevend.com, babu.t@gmail.com"], "https://samplevend.com")
+    assert (main, others, mine) == ("babu@samplevend.com", [], ["babu@samplevend.com", "babu.t@gmail.com"])
+    # personal first in the field, work address on their own site later: work is the main one
+    assert split_emails("x.y@gmail.com, xy@samplevend.com", [], "samplevend.com")[0] == "xy@samplevend.com"
+    rec = map_payload({"comments": [{"author_name": "B T", "author_profile_url": "https://www.linkedin.com/in/b-t",
+                                     "email": "babu@samplevend.com, babu.t@gmail.com", "comment_text": "hi"}]}).records[0]
+    assert rec.fields["email"] == "babu@samplevend.com"          # one address stored as the main email

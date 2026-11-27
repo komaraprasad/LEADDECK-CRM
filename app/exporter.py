@@ -26,10 +26,15 @@ COLUMNS = [
     ("location", "Location", "location", 24), ("job_location", "Job Location", "location", 26),
     ("tools", "Found By", "source", 18), ("hiring_for", "Hiring For", "source", 30), ("job_url", "Job Link", "source", 12),
     ("post_title", "Commented On Post", "source", 34), ("post_url", "Post Link", "source", 12), ("comment", "Their Comment", "source", 46),
-    ("comment_count", "Comments", "source", 10),
+    ("comment_count", "Comments (all posts)", "source", 12), ("all_comments", "All Comments", "source", 60),
     ("do_not_contact_text", "Do Not Contact", "status", 14), ("last_seen", "Last Seen (UTC)", "status", 17),
+    ("latest_interaction", "Latest Interaction (UTC)", "status", 18),
+    # sheet-specific: shown only where a tool sheet lists them (not in CSV / All Leads)
+    ("headline_role", "Headline / Role", "lead", 42), ("company_website", "Company Website", "company", 26),
+    ("company_url", "Company LinkedIn", "company", 14), ("tool_emails", "Email", "contact", 44),
 ]
-EXPORT_COLUMNS = [(k, h) for k, h, _, _ in COLUMNS]     # CSV column set (and kept for callers/tests)
+_SHEET_ONLY = {"headline_role", "company_website", "company_url", "tool_emails", "all_comments", "latest_interaction"}
+EXPORT_COLUMNS = [(k, h) for k, h, _, _ in COLUMNS if k not in _SHEET_ONLY]     # CSV / All Leads column set
 _COL = {k: (h, g, w) for k, h, g, w in COLUMNS}
 
 _BASE = ["display_name", "name_source", "role", "headline", "lead_type", "linkedin_url", "company_name", "company_industry", "company_size",
@@ -38,7 +43,10 @@ _STATUS = ["tools", "do_not_contact_text", "last_seen"]
 TOOL_COLUMNS = {
     "hiringbadge": _BASE + _STATUS,
     "jobharvest": _BASE + ["job_location", "hiring_for", "job_url"] + _STATUS,
-    "commentminer": _BASE[:12] + ["comment_emails"] + _BASE[12:] + ["post_title", "post_url", "comment", "comment_count"] + _STATUS,
+    # agreed with the user from CommentMiner's own export; enrichment columns kept (empty until enriched)
+    "commentminer": ["display_name", "headline_role", "lead_type", "linkedin_url", "company_name", "company_website", "company_url",
+                     "tool_emails", "comment_emails", "phone", "comment_count", "all_comments", "post_title", "post_url",
+                     "latest_interaction", "email_status", "personal_email", "all_emails", "all_phones", "company_phone", "tools"],
     # candidates: their skills and availability matter; employer industry/size does not
     "talentpulse": [k for k in _BASE if k not in ("company_industry", "company_size")][:7]
                    + ["search_role", "experience", "skills", "open_to_work", "qualification"]
@@ -46,7 +54,7 @@ TOOL_COLUMNS = {
 }
 # Shown even when empty in a sheet: an empty Email/Phone column tells the reader what is still missing.
 _ALWAYS = {"display_name", "role", "company_name", "email", "phone", "linkedin_url", "tools"}
-_LINKS = {"linkedin_url": "Open profile", "job_url": "Open job", "post_url": "Open post"}
+_LINKS = {"linkedin_url": "Open profile", "job_url": "Open job", "post_url": "Open post", "company_url": "Open page"}
 _GROUP_FILL = {"lead": "1E3A8A", "company": "0F766E", "contact": "7C3AED", "location": "B45309", "source": "BE185D", "status": "475569", "candidate": "0369A1"}
 _DANGEROUS = ("=", "+", "-", "@", "\t", "\r")
 
@@ -84,7 +92,9 @@ def _value(r: dict, k: str):
         return (v or "unknown").replace("_", " ").capitalize()
     if k == "email_status":
         return (v or "").capitalize()
-    if k == "last_seen":
+    if k == "headline_role":
+        return r.get("headline") or r.get("title") or ""
+    if k in ("last_seen", "latest_interaction"):
         return _when(v)
     if k == "comment_count":
         return v or ""
@@ -109,8 +119,9 @@ def _tools_of(r) -> list[str]:
     return v if isinstance(v, list) else [t.strip() for t in str(v or "").split(",") if t.strip()]
 
 
-def _sheet(wb, title: str, rows: list[dict], keys: list[str]) -> None:
-    keys = [k for k in keys if k in _ALWAYS or any(str(_value(r, k) or "").strip() for r in rows)]  # drop empty columns
+def _sheet(wb, title: str, rows: list[dict], keys: list[str], auto_hide: bool = False) -> None:
+    if auto_hide:   # only the mixed All Leads sheet; a tool sheet shows exactly its agreed columns
+        keys = [k for k in keys if k in _ALWAYS or any(str(_value(r, k) or "").strip() for r in rows)]
     ws = wb.create_sheet(title)
     ws.append([_COL[k][0] for k in keys])
     for c, k in enumerate(keys, 1):
@@ -132,7 +143,7 @@ def _sheet(wb, title: str, rows: list[dict], keys: list[str]) -> None:
             cell.value = v if isinstance(v, int) else ("" if v is None else str(v))
             if isinstance(cell.value, str) and cell.value.startswith("="):
                 cell.data_type = "s"  # text, never a formula (lead data is untrusted)
-            if k == "comment":
+            if k in ("comment", "all_comments"):
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
             else:
                 cell.alignment = Alignment(vertical="top")
@@ -162,7 +173,7 @@ def build_xlsx(rows: list[dict]) -> bytes:
     summary.append([])
     notes = ["The other tabs list the leads; header colours: blue = lead, green = company, purple = contact, "
              "amber = location, light blue = candidate details, pink = where it was found, grey = status.",
-             "Columns a sheet has no data for are left out. Links say Open profile / Open job / Open post."]
+             "Each tool sheet has a fixed set of columns (empty until there is data, e.g. after enrichment); All Leads leaves out columns no lead has. Links say Open profile / Open job / Open post / Open page."]
     if with_all and len(tools_present) > 1:
         notes.insert(0, "A lead found by several tools is on each of those tools' sheets.")
     for n in notes:
@@ -180,7 +191,7 @@ def build_xlsx(rows: list[dict]) -> bytes:
     for col, w in zip("ABCDE", (26, 10, 12, 12, 18)):
         summary.column_dimensions[col].width = w
     if with_all:
-        _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS])
+        _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS], auto_hide=True)
     for t in tools_present:
         _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], TOOL_COLUMNS[t])
     # the leads open first; the summary is the last tab

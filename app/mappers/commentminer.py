@@ -70,7 +70,9 @@ def map_payload(payload: object) -> MapResult:
             fv = lambda *ks: next((pick(x, *ks) for _, x in reversed(items) if pick(x, *ks)), None)
             headline, website, curl = fv("author_headline", "headline"), fv("company_website"), fv("company_linkedin_url")
             texts = [pick(x, "comment_text") or "" for _, x in items]
-            email, others = pick_emails(fv("email"), texts, website)
+            # every email the tool gave for this person (any comment, newest first; a field may hold several)
+            given = ", ".join(pick(x, "email") or "" for _, x in reversed(items))
+            email, others, mine = split_emails(given, texts, website)
             comments = [{"post_title": pick(x, "post_title"), "post_url": pick(x, "post_url"), "comment_text": pick(x, "comment_text"),
                          "commented_at": pick(x, "commented_at")} for _, x in items]
             fields = {
@@ -79,7 +81,7 @@ def map_payload(payload: object) -> MapResult:
                 "company_website": website, "company_url": curl, "company_name": company_name(headline, curl, website),
                 "lead_type": lead_type_from_headline(headline),
             }
-            out = {**raw, "_comments": comments, "_comment_emails": others}
+            out = {**raw, "_comments": comments, "_comment_emails": others, "_emails": mine}
             res.records.append(NormalizedRecord(TOOL, "person", f"{TOOL}:{key}", out, fields,
                                                 parse_dt(pick(r, "commented_at", "collected_at", "created_at", "comment_date"))))
         except Exception as e:
@@ -99,22 +101,41 @@ def pick_emails(given, comment_texts, website) -> tuple:
     """(main email, other emails written in their comments). The tool's email stays the main one, except when it
     is a personal mailbox and a comment contains an address on the lead's own company website: that work address
     is clearly theirs and better for outreach. Other addresses may belong to a colleague, so they are only listed."""
+    main, others, _ = split_emails(given, comment_texts, website)
+    return main, others
+
+
+def _emails_in(text) -> list:
+    out = []
+    for e in _EMAIL.findall(text or ""):
+        e = e.lower().rstrip(".")
+        if e not in out:
+            out.append(e)
+    return out
+
+
+def split_emails(given, comment_texts, website) -> tuple:
+    """(main email, other emails from comments, the lead's emails). CommentMiner's email field can hold several
+    addresses ("a@x.com, b@gmail.com"); all are the lead's. The main one (used for enrichment / CRM) is the first,
+    except that a work address on the lead's own company website beats a personal mailbox. Addresses found only in
+    comments, not in the email field, are listed separately: they may be a colleague's."""
     from app.enrich import PERSONAL_EMAIL_DOMAINS
-    given = (given or "").strip().lower() or None
+    given_list = _emails_in(given)
     found = []
     for t in comment_texts:
-        for e in _EMAIL.findall(t or ""):
-            e = e.lower().rstrip(".")
+        for e in _emails_in(t):
             if e not in found:
                 found.append(e)
-    host, main = _host(website), given
+    host = _host(website)
     dom = lambda e: e.rsplit("@", 1)[-1]
-    if host and (not given or dom(given) in PERSONAL_EMAIL_DOMAINS):
-        work = next((e for e in found if dom(e) == host or dom(e).endswith("." + host) or host.endswith("." + dom(e))), None)
-        main = work or given
-    if not main and found:
-        main = found[0]
-    return main, [e for e in found if e != main and e != given] + ([given] if given and given != main else [])
+    own = lambda e: bool(host) and (dom(e) == host or dom(e).endswith("." + host) or host.endswith("." + dom(e)))
+    main = given_list[0] if given_list else None
+    if main and dom(main) in PERSONAL_EMAIL_DOMAINS:
+        main = next((e for e in given_list if own(e)), None) or next((e for e in found if own(e)), None) or main
+    elif not main:
+        main = next((e for e in found if own(e)), None) or (found[0] if found else None)
+    mine = ([main] if main else []) + [e for e in given_list if e != main]
+    return main, [e for e in found if e not in mine], mine
 
 
 _EMPLOYER = re.compile(
