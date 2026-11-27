@@ -752,3 +752,19 @@ def test_talentpulse_utc_times_placeholders_and_sheet(db):
     assert hdr[:8] == ["Name", "Title", "Headline", "Lead Type", "LinkedIn", "Company", "Experience", "Location"]
     assert "Company Industry" not in hdr and "Name Source" not in hdr and "Date Collected (UTC)" in hdr
     assert ws.cell(row=2, column=hdr.index("Date Collected (UTC)") + 1).value.endswith("08:50")
+
+
+def test_rocketreach_404_is_not_found_and_the_run_goes_on(db):
+    calls = []
+    def http(url, headers):
+        calls.append(url)
+        if "name=Nobody" in url:
+            return 404, '{"detail":"Could not find the person you were searching for!"}'
+        return 200, '{"status":"complete","emails":[{"email":"found@acme.example","smtp_valid":"valid","grade":"A"}]}'
+    rr = RocketReach("k", http=http, sleep=lambda s: None)
+    assert rr.lookup({"full_name": "Nobody Here", "company_name": "Tiny Co"}).status == "not_found"
+    a = mkperson(db, "Nobody Here", None, "Tiny Co")
+    b = mkperson(db, "Some Body", None, "Acme")
+    run = E.run_enrichment(db, rr, mkcamp(db, [a, b]), 5, 5)
+    assert run["status"] != "failed" and run["not_found"] == 1 and run["matched"] == 1   # one miss does not stop the run
+    assert db.one("SELECT email FROM people WHERE id=?", (b,))["email"] == "found@acme.example"

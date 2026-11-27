@@ -119,6 +119,11 @@ def _parse(p: dict) -> ProviderResult:
     return ProviderResult("not_found")
 
 
+class _NotFound(Exception):
+    """HTTP 404 from /person/lookup: RocketReach has no such person ("Could not find the person you were
+    searching for!"). A normal outcome for one lead, never a reason to stop the run; no credit is used."""
+
+
 class _LookupTypeRefused(Exception):
     """The plan does not allow the requested lookup_type (HTTP 400/403 while it was set)."""
 
@@ -147,6 +152,8 @@ class RocketReach(Provider):
             raise _LookupTypeRefused()
         if status in (401, 403):
             raise ProviderError("RocketReach rejected the API key or plan (HTTP %d). Check that your plan includes API access." % status)
+        if status == 404 and path == "/person/lookup":
+            raise _NotFound()
         if status == 429:
             raise ProviderError("RocketReach rate limit reached (HTTP 429). Try again later.")
         if status >= 400:
@@ -165,6 +172,12 @@ class RocketReach(Provider):
             params = {"name": person["full_name"], "current_employer": person["company_name"]}
         else:
             return ProviderResult("error", error="no LinkedIn URL or name+company to match on")
+        try:
+            return self._lookup(params)
+        except _NotFound:
+            return ProviderResult("not_found")
+
+    def _lookup(self, params) -> ProviderResult:
         if self.lookup_type:
             try:
                 data = self._call("/person/lookup", {**params, "lookup_type": self.lookup_type})
