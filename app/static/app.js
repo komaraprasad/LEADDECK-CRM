@@ -31,6 +31,13 @@ const LD = (() => {
     const bits = [r.search_role, r.experience, r.open_to_work ? (r.open_to_work.startsWith('Yes') ? 'Open to work' : 'Not open to work') : ''].filter(Boolean);
     return bits.length ? el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', title: r.skills ? 'Skills: ' + r.skills : '' }, '🎯 ' + bits.join(' · ')) : null;
   };
+  // own location when known, the job's otherwise; the job line (role + link) stays under it either way
+  const locCell = r => {
+    if (!r.location) return jobLoc(r);
+    const job = r.hiring_for && r.job_url ? el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', title: r.job_location ? 'Job location: ' + r.job_location : '' }, '💼 Job: ',
+      el('a', { class: 'lnk', href: r.job_url, target: '_blank', rel: 'noopener noreferrer' }, r.hiring_for + ' ↗')) : null;
+    return el('div', {}, el('div', {}, r.location), job);
+  };
   const typeTag = t => el('span', { class: 'tag ' + ({ candidate: 'cand', employer_contact: 'emp' }[t] || 'unk') }, (t || 'unknown').replace('_', ' '));
   const fmtBytes = n => n == null ? 'n/a' : n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
   const when = s => s ? s.replace('T', ' ').slice(0, 16) + ' UTC' : '—';
@@ -245,7 +252,7 @@ const LD = (() => {
             r.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null))),
           el('td', {}, r.title || r.headline || '', r.comment_count ? el('div', { class: 'mut', style: 'font-size:12.5px;margin-top:2px', title: (r.post_title ? 'Latest: ' + r.post_title : 'LinkedIn comments') }, '💬 ' + r.comment_count + ' comment' + (r.comment_count > 1 ? 's' : '')) : null,
             candLine(r)),
-          el('td', {}, r.company_name || ''), el('td', {}, r.location || jobLoc(r)),
+          el('td', {}, r.company_name || ''), el('td', {}, locCell(r)),
           el('td', { class: 'nw' }, r.email || '', r.email_status === 'valid' ? el('span', { class: 'tag cand', title: 'Verified by the enrichment provider' }, 'verified') : null), el('td', { class: 'nw' }, phoneCell(r)),
           el('td', {}, qualityTag(r)), el('td', { class: 'nw' }, stagePill(r.stage), r.owner ? initials(r.owner) : null),
           el('td', { class: 'mut nw' }, (r.last_seen || '').slice(0, 10)), el('td', {}, r.tools.map(t => el('span', { class: 'tag' }, TOOL_LABEL[t] || t))))) :
@@ -563,7 +570,7 @@ const LD = (() => {
         el('div', { class: 'mut' }, (d.email ? 'Email from tools: ' + d.email + '. ' : '') + 'No enriched contacts yet. Run enrichment from the campaign page.');
       body.replaceChildren(...[
         el('div', { class: 'head' }, avatarFor(nameOf(d), 'lg'), el('div', {}, el('h2', { style: 'margin:0;font-size:24px;letter-spacing:-.02em' }, nameNode(d, 'Unnamed')), el('div', { class: 'mut' }, [d.title, d.company_name].filter(Boolean).join(' · ') || '—'),
-          d.location ? el('div', { class: 'mut', style: 'font-size:13px' }, '📍 ' + d.location) : d.job_location ? el('div', { class: 'mut', style: 'font-size:13px', title: 'Their own location is not known yet (enrich to get it)' }, '📍 ' + d.job_location + ' (job location)') : null,
+          d.location ? el('div', { class: 'mut', style: 'font-size:13px' }, '📍 ' + d.location + (d.job_location && d.job_location !== d.location ? ' · job in ' + d.job_location : '')) : d.job_location ? el('div', { class: 'mut', style: 'font-size:13px', title: 'Their own location is not known yet (enrich to get it)' }, '📍 ' + d.job_location + ' (job location)') : null,
           d.post_url || d.comment ? el('div', { class: 'mut', style: 'font-size:13px' }, '💬 Commented on: ', d.post_url ? el('a', { class: 'lnk', href: d.post_url, target: '_blank', rel: 'noopener noreferrer' }, (d.post_title || 'LinkedIn post') + ' ↗') : (d.post_title || 'a post'),
             d.comment_count > 1 ? ' · ' + d.comment_count + ' comments' : null,
             d.comment ? el('div', { style: 'margin-top:4px;padding:6px 10px;border-left:3px solid #c7d2fe;font-style:italic;white-space:pre-wrap;max-height:7.5em;overflow:auto' }, '“' + d.comment + '”') : null,

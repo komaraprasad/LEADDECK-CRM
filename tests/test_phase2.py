@@ -548,7 +548,7 @@ def test_jobharvest_contact_shows_job_location(db):
     assert (row[b]["display_name"], row[b]["name_source"], row[b]["hiring_for"]) == ("Own", "", "Java Developer")
     items = {r["id"]: r for r in L.list_leads(db, {})["items"]}
     assert items[a]["job_location"] == "Bengaluru, Karnataka, India" and not items[a]["location"]
-    assert items[b]["job_location"] == "" and items[b]["location"] == "Chennai"   # own location wins
+    assert items[b]["job_location"] == "Bengaluru, Karnataka, India" and items[b]["location"] == "Chennai"   # both kept, separate columns
     assert L.get_lead(db, a)["job_location"] == "Bengaluru, Karnataka, India"
 
 
@@ -768,3 +768,12 @@ def test_rocketreach_404_is_not_found_and_the_run_goes_on(db):
     run = E.run_enrichment(db, rr, mkcamp(db, [a, b]), 5, 5)
     assert run["status"] != "failed" and run["not_found"] == 1 and run["matched"] == 1   # one miss does not stop the run
     assert db.one("SELECT email FROM people WHERE id=?", (b,))["email"] == "found@acme.example"
+
+
+def test_job_location_kept_after_enrichment_fills_own_location(db):
+    from app import leads as L
+    a = mkperson(db, None, "https://www.linkedin.com/in/kay-l", "Sample Co"); db.update("people", a, {"location": "Hyderabad, TG, IN"})
+    db.insert("lead_sources", {"tool": "jobharvest", "kind": "person", "source_key": "jh:kl", "person_id": a, "collected_at": "2026-11-27T08:25:00+00:00",
+                               "raw_payload": '{"location": "Hyderabad, Telangana, India", "job_title": "ML Engineer", "job_url": "https://www.linkedin.com/jobs/view/9/"}'})
+    r = L.export_rows(db, ids=[a])[0]
+    assert (r["location"], r["job_location"], r["hiring_for"]) == ("Hyderabad, TG, IN", "Hyderabad, Telangana, India", "ML Engineer")

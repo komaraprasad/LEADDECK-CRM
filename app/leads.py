@@ -70,8 +70,7 @@ def _job_locations(db: Database, rows: list[dict]) -> None:
         j = found.get(r["id"])
         if j:
             r["hiring_for"], r["job_url"] = j["title"], j["url"]
-            if not (r.get("location") or "").strip():
-                r["job_location"] = j["loc"]
+            r["job_location"] = j["loc"]   # the job's place: kept even after enrichment fills the person's own location
     _post_context(db, rows, ids, ph)
 
 
