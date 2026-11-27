@@ -669,3 +669,26 @@ def test_commentminer_email_field_with_several_addresses():
     rec = map_payload({"comments": [{"author_name": "B T", "author_profile_url": "https://www.linkedin.com/in/b-t",
                                      "email": "babu@samplevend.com, babu.t@gmail.com", "comment_text": "hi"}]}).records[0]
     assert rec.fields["email"] == "babu@samplevend.com"          # one address stored as the main email
+
+
+def test_hiringbadge_sheet_has_hiring_for_status_website_and_dates(db):
+    import io
+    from openpyxl import load_workbook
+    from app import leads as L
+    from app.mappers.hiringbadge import map_payload
+    from app.merge import upsert_records
+    from app.exporter import build_xlsx
+    row = {"id": 1, "name": "Rae H", "profile_url": "https://www.linkedin.com/in/rae-h", "title": "Senior Recruiter", "headline": "Hiring",
+           "company": "Sample Bank", "company_industry": "Banking", "company_size": "10,001+ employees", "company_website": "samplebank.example",
+           "hiring_for": "Lead Software Engineer · Sample Bank · Hyderabad (Hybrid)", "status": "Badge confirmed",
+           "location": "Hyderabad, Telangana, India", "first_found": "2026-11-27 13:22:19", "last_seen": "2026-11-27 13:22:19"}
+    upsert_records(db, map_payload({"leads": [row]}).records)
+    pid = db.one("SELECT id FROM people WHERE full_name='Rae H'")["id"]
+    rows = L.export_rows(db, ids=[pid])
+    ws = load_workbook(io.BytesIO(build_xlsx(rows)))["Hiring Badge Finder"]
+    hdr = [c.value for c in ws[1]]; val = lambda h: ws.cell(row=2, column=hdr.index(h) + 1).value
+    assert hdr[:4] == ["Name", "Title", "Headline", "Lead Type"] and hdr[-1] == "Found By"
+    assert "Name Source" not in hdr and "Do Not Contact" not in hdr
+    assert val("Hiring For").startswith("Lead Software Engineer") and val("Hiring Status") == "Badge confirmed"
+    assert val("Company Website") == "samplebank.example" and val("Date Collected (UTC)")
+    assert val("Email") in (None, "") and "All Phones" in hdr          # enrichment group present, empty

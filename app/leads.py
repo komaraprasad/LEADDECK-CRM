@@ -178,6 +178,31 @@ def _candidate_context(db: Database, rows: list[dict], ids: list, ph: str) -> No
         r["qualification"] = g("qualification_status")
         if not r.get("email_status") and r.get("email"):
             r["email_status"] = g("email_status")   # e.g. "From profile"
+    _badge_context(db, rows, ids, ph)
+
+
+def _badge_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
+    """Hiring Badge Finder people: the open roles they are hiring for and the badge status. Display/export only."""
+    for r in rows:
+        r.setdefault("hiring_status", "")
+    found: dict[int, dict] = {}
+    for s in db.query(f"SELECT person_id, raw_payload FROM lead_sources WHERE tool='hiringbadge' AND kind='person' "
+                      f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", ids):
+        if s["person_id"] in found:
+            continue
+        try:
+            raw = json.loads(s["raw_payload"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(raw, dict):
+            found[s["person_id"]] = raw
+    for r in rows:
+        raw = found.get(r["id"])
+        if not raw:
+            continue
+        r["hiring_status"] = _clean(raw.get("status") or raw.get("hiring_status"))
+        if not r.get("hiring_for"):   # a JobHarvest job, when there is one, is more specific
+            r["hiring_for"] = _clean(raw.get("hiring_for") or raw.get("open_roles_text"))
 
 
 def quality_band(score: int) -> str:

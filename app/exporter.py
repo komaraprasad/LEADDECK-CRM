@@ -32,9 +32,10 @@ COLUMNS = [
     # sheet-specific: shown only where a tool sheet lists them (not in CSV / All Leads)
     ("headline_role", "Headline / Role", "lead", 42), ("company_website", "Company Website", "company", 26),
     ("company_url", "Company LinkedIn", "company", 14), ("tool_emails", "Email", "contact", 44),
-    ("title_only", "Title", "lead", 28),   # the person's title only (filled by enrichment for tools that give none)
+    ("title_only", "Title", "lead", 28),
+    ("hiring_status", "Hiring Status", "source", 16), ("first_seen", "Date Collected (UTC)", "status", 18),   # the person's title only (filled by enrichment for tools that give none)
 ]
-_SHEET_ONLY = {"title_only", "headline_role", "company_website", "company_url", "tool_emails", "all_comments", "latest_interaction"}
+_SHEET_ONLY = {"hiring_status", "first_seen", "title_only", "headline_role", "company_website", "company_url", "tool_emails", "all_comments", "latest_interaction"}
 EXPORT_COLUMNS = [(k, h) for k, h, _, _ in COLUMNS if k not in _SHEET_ONLY]     # CSV / All Leads column set
 _COL = {k: (h, g, w) for k, h, g, w in COLUMNS}
 
@@ -42,7 +43,10 @@ _BASE = ["display_name", "name_source", "role", "headline", "lead_type", "linked
          "email", "email_status", "personal_email", "all_emails", "phone", "all_phones", "company_phone", "location"]
 _STATUS = ["tools", "do_not_contact_text", "last_seen"]
 TOOL_COLUMNS = {
-    "hiringbadge": _BASE + _STATUS,
+    # agreed from Hiring Badge Finder's own export; it gives no email/phone, so those are the enrichment group
+    "hiringbadge": ["display_name", "role", "headline", "lead_type", "linkedin_url", "company_name", "company_industry",
+                    "company_size", "company_website", "hiring_for", "hiring_status", "location", "first_seen", "last_seen",
+                    "email", "email_status", "personal_email", "all_emails", "phone", "all_phones", "company_phone", "tools"],
     "jobharvest": _BASE + ["job_location", "hiring_for", "job_url"] + _STATUS,
     # agreed with the user from CommentMiner's own export; enrichment columns kept (empty until enriched)
     "commentminer": ["display_name", "headline_role", "lead_type", "linkedin_url", "company_name", "company_website", "company_url",
@@ -98,7 +102,7 @@ def _value(r: dict, k: str):
         return r.get("title") or ""
     if k == "headline_role":
         return r.get("headline") or r.get("title") or ""
-    if k in ("last_seen", "latest_interaction"):
+    if k in ("last_seen", "latest_interaction", "first_seen"):
         return _when(v)
     if k == "comment_count":
         return v or ""
