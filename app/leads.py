@@ -202,7 +202,10 @@ def _badge_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
             continue
         r["hiring_status"] = _clean(raw.get("status") or raw.get("hiring_status"))
         if not r.get("hiring_for"):   # a JobHarvest job, when there is one, is more specific
-            r["hiring_for"] = _clean(raw.get("hiring_for") or raw.get("open_roles_text"))
+            hf = _clean(raw.get("hiring_for") or raw.get("open_roles_text"))
+            # the tool sometimes captures the profile's button row ("More · Save in Sales Navigator | company ·
+            # school · city") instead of an open role: that is not a role, so show nothing rather than page text
+            r["hiring_for"] = "" if re.search(r"save in sales navigator|^more\s*·", hf, re.I) else hf
 
 
 def quality_band(score: int) -> str:

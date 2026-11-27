@@ -692,3 +692,15 @@ def test_hiringbadge_sheet_has_hiring_for_status_website_and_dates(db):
     assert val("Hiring For").startswith("Lead Software Engineer") and val("Hiring Status") == "Badge confirmed"
     assert val("Company Website") == "samplebank.example" and val("Date Collected (UTC)")
     assert val("Email") in (None, "") and "All Phones" in hdr          # enrichment group present, empty
+
+
+
+def test_hiringbadge_page_clutter_is_not_a_hiring_role(db):
+    from app import leads as L
+    from app.mappers.hiringbadge import map_payload
+    from app.merge import upsert_records
+    row = {"id": 2, "name": "Kay M", "profile_url": "https://www.linkedin.com/in/kay-m", "company": "Sample Co",
+           "hiring_for": "More · Save in Sales Navigator | Sample Co · Sample University · Hyderabad", "status": "Badge confirmed"}
+    upsert_records(db, map_payload({"leads": [row]}).records)
+    pid = db.one("SELECT id FROM people WHERE full_name='Kay M'")["id"]
+    assert L.export_rows(db, ids=[pid])[0]["hiring_for"] == ""
