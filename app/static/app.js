@@ -655,11 +655,11 @@ const LD = (() => {
         moreBtn);
       const c = el('div', { class: 'lcard' + (it.do_not_contact ? ' dnc' : ''), draggable: 'true', tabindex: 0, role: 'button', 'data-pid': it.person_id, 'aria-label': name + ', ' + STAGE_LABEL[st] + '. Press Enter for details' },
         el('div', { class: 'top' }, avatarFor(name), el('div', {}, el('div', { class: 'lname' }, nameNode(it, 'Unnamed')),
-          el('div', { class: 'mut ell' }, [it.title, it.company_name].filter(Boolean).join(' · ') || '—')), acts),
+          el('div', { class: 'mut ell' }, [it.title, it.company_name].filter(Boolean).join(' · ') || '—'))),
         el('div', { class: 'lsrc' }, ...(it.tools || []).map(t => el('span', { class: 'tb t-' + t, title: 'From ' + (TOOL_SHORT[t] || [t, t])[1] }, (TOOL_SHORT[t] || [t])[0])),
           it.lead_type && it.lead_type !== 'unknown' ? el('span', { class: 'mut lt' }, it.lead_type === 'candidate' ? 'Candidate' : 'Employer contact') : null,
           el('span', { class: 'ci' + (hasEmail ? ' on' + (it.email_status === 'valid' ? ' ok' : '') : ''), title: hasEmail ? 'Email' + (it.email_status ? ' · ' + it.email_status : '') : 'No email' }, '✉'),
-          el('span', { class: 'ci' + (it.has_phone ? ' on' : ''), title: it.has_phone ? 'Has phone' : 'No phone' }, '☎')),
+          el('span', { class: 'ci' + (it.has_phone ? ' on' : ''), title: it.has_phone ? 'Has phone' : 'No phone' }, '☎'), acts),
         el('div', { class: 'lmeta' }, contact, it.email_status === 'valid' ? el('span', { class: 'tag cand' }, 'email verified') : it.email_status === 'invalid' ? el('span', { class: 'tag bad' }, 'email invalid') : null,
           it.stale ? el('span', { class: 'tag bad', title: 'No activity for ' + it.idle_days + ' days (flagged after ' + col.stale_after_days + ')' }, '⏱ ' + it.idle_days + 'd idle') : null,
           it.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null, it.open_tasks ? el('span', { class: 'tag' }, it.open_tasks + ' task' + (it.open_tasks > 1 ? 's' : '')) : null,
