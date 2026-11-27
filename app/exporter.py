@@ -175,8 +175,6 @@ def build_xlsx(rows: list[dict]) -> bytes:
         _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS])
     for t in tools_present:
         _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], TOOL_COLUMNS[t])
-    if not rows:
-        _sheet(wb, "Leads", rows, [k for k, _ in EXPORT_COLUMNS])
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()
