@@ -69,3 +69,15 @@ def test_xlsx_one_tool_has_no_duplicate_all_leads_sheet():
     mixed = one + [{"full_name": "C", "tools": "hiringbadge"}]
     assert load_workbook(io.BytesIO(build_xlsx(mixed))).sheetnames == ["All Leads", "Hiring Badge Finder", "CommentMiner", "Summary"]
     assert load_workbook(io.BytesIO(build_xlsx([]))).sheetnames == ["All Leads", "Summary"]
+
+
+def test_commentminer_sheet_shows_enrichment_title_and_location():
+    from app.exporter import TOOL_COLUMNS
+    cols = TOOL_COLUMNS["commentminer"]
+    assert cols.index("title_only") > cols.index("company_phone") and "location" in cols
+    wb = load_workbook(io.BytesIO(build_xlsx([{"full_name": "A", "tools": "commentminer", "headline": "Recruiter at X",
+                                                "title": "Bench Sales Recruiter", "location": "Hyderabad"}])))
+    ws = wb["CommentMiner"]; hdr = [c.value for c in ws[1]]
+    assert ws.cell(row=2, column=hdr.index("Title") + 1).value == "Bench Sales Recruiter"
+    assert ws.cell(row=2, column=hdr.index("Location") + 1).value == "Hyderabad"
+    assert ws.cell(row=2, column=hdr.index("Headline / Role") + 1).value == "Recruiter at X"

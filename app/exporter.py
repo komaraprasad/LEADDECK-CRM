@@ -32,8 +32,9 @@ COLUMNS = [
     # sheet-specific: shown only where a tool sheet lists them (not in CSV / All Leads)
     ("headline_role", "Headline / Role", "lead", 42), ("company_website", "Company Website", "company", 26),
     ("company_url", "Company LinkedIn", "company", 14), ("tool_emails", "Email", "contact", 44),
+    ("title_only", "Title", "lead", 28),   # the person's title only (filled by enrichment for tools that give none)
 ]
-_SHEET_ONLY = {"headline_role", "company_website", "company_url", "tool_emails", "all_comments", "latest_interaction"}
+_SHEET_ONLY = {"title_only", "headline_role", "company_website", "company_url", "tool_emails", "all_comments", "latest_interaction"}
 EXPORT_COLUMNS = [(k, h) for k, h, _, _ in COLUMNS if k not in _SHEET_ONLY]     # CSV / All Leads column set
 _COL = {k: (h, g, w) for k, h, g, w in COLUMNS}
 
@@ -46,7 +47,8 @@ TOOL_COLUMNS = {
     # agreed with the user from CommentMiner's own export; enrichment columns kept (empty until enriched)
     "commentminer": ["display_name", "headline_role", "lead_type", "linkedin_url", "company_name", "company_website", "company_url",
                      "tool_emails", "comment_emails", "phone", "comment_count", "all_comments", "post_title", "post_url",
-                     "latest_interaction", "email_status", "personal_email", "all_emails", "all_phones", "company_phone", "tools"],
+                     "latest_interaction", "email_status", "personal_email", "all_emails", "all_phones", "company_phone",
+                     "title_only", "location", "tools"],   # Title / Location: CommentMiner gives none; enrichment fills them
     # candidates: their skills and availability matter; employer industry/size does not
     "talentpulse": [k for k in _BASE if k not in ("company_industry", "company_size")][:7]
                    + ["search_role", "experience", "skills", "open_to_work", "qualification"]
@@ -92,6 +94,8 @@ def _value(r: dict, k: str):
         return (v or "unknown").replace("_", " ").capitalize()
     if k == "email_status":
         return (v or "").capitalize()
+    if k == "title_only":
+        return r.get("title") or ""
     if k == "headline_role":
         return r.get("headline") or r.get("title") or ""
     if k in ("last_seen", "latest_interaction"):
