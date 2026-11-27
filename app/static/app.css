@@ -393,7 +393,7 @@ th.sortable{padding:0}.thb{all:unset;cursor:pointer;display:block;padding:10px 1
 .lsrc{display:flex;align-items:center;gap:5px;margin-top:8px;font-size:12px}
 .lsrc .tb{font-size:10.5px;font-weight:800;letter-spacing:.03em;padding:1px 6px;border-radius:6px;background:var(--line-2);color:var(--ink-2)}
 .tb.t-commentminer{background:#e8e3ff;color:#4a2fd6}.tb.t-talentpulse{background:#dff6f8;color:#0b7f8a}.tb.t-hiringbadge{background:#fff1dc;color:#a35a00}.tb.t-jobharvest{background:#e3f6ec;color:#127a4f}
-.lsrc .lt{margin-left:2px}.lsrc .ci:first-of-type{margin-left:auto}.lsrc .cacts{margin:-4px -6px -4px 4px;align-self:center}
+.lsrc .lt{margin-left:2px;white-space:nowrap}.lsrc .ci:first-of-type{margin-left:auto}.lsrc .cacts{margin:-4px -6px -4px 4px;align-self:center}
 .lcard .lname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lsrc .ci{color:#c3c9da;font-size:13px}.lsrc .ci.on{color:var(--text)}.lsrc .ci.ok{color:var(--ok)}
 .tag.warn{background:color-mix(in srgb,var(--warn) 16%,transparent);color:#9a5a00}
