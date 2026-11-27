@@ -642,3 +642,15 @@ def test_talentpulse_candidate_details(db):
     from app.exporter import _value, TOOL_COLUMNS
     assert _value(r, "headline") == "Entry-level Python dev, Django and SQL" and _value(r, "role") == "Python Developer"
     assert "company_industry" not in TOOL_COLUMNS["talentpulse"] and "skills" in TOOL_COLUMNS["talentpulse"]
+
+
+def test_tool_email_kept_when_provider_finds_others_and_status_matches_it(db):
+    from app import leads as L
+    a = mkperson(db, "Ana B", "https://www.linkedin.com/in/ana-b", "Acme"); db.update("people", a, {"email": "ana.b@gmail.com"})
+    res = ProviderResult("matched", [ContactValue("ana@acme.example", "valid", "A", "work"), ContactValue("ana.b2@gmail.com", "valid", "A", "personal")], credits_used=1)
+    E.run_enrichment(db, FakeProvider({a: res}), mkcamp(db, [a]), 5, 5)
+    row = L.export_rows(db, ids=[a])[0]
+    assert row["email"] == "ana.b@gmail.com"                      # the tool's email is never overwritten
+    assert row["email_status"] == ""                              # no provider checked THIS address
+    assert row["all_emails"].startswith("ana.b@gmail.com (from tool)")
+    assert "ana@acme.example (work)" in row["all_emails"] and "ana.b2@gmail.com (personal)" in row["all_emails"]

@@ -251,10 +251,12 @@ def _attach_tools(db: Database, rows: list[dict]) -> list[dict]:
         ph = ",".join("?" for _ in ids)
         for s in db.query(f"SELECT DISTINCT person_id, tool FROM lead_sources WHERE person_id IN ({ph})", ids):
             tools.setdefault(s["person_id"], []).append(s["tool"])
-    status: dict[int, str] = {}
+    # status of the email actually shown in the Email column (a tool's email stays there even when a provider
+    # later finds others, so the primary provider email's status would describe a different address)
+    status: dict[tuple, str] = {}
     if ids:
-        for c in db.query(f"SELECT person_id, verification FROM contact_points WHERE kind='email' AND is_primary=1 AND person_id IN ({ph})", ids):
-            status[c["person_id"]] = c["verification"]
+        for c in db.query(f"SELECT person_id, value, verification FROM contact_points WHERE kind='email' AND person_id IN ({ph})", ids):
+            status[(c["person_id"], (c["value"] or "").lower())] = c["verification"]
     cphone: dict[int, str] = {}
     if ids:
         for c in db.query(f"SELECT person_id, value FROM contact_points WHERE kind='company_phone' AND is_primary=1 AND person_id IN ({ph})", ids):
@@ -270,12 +272,16 @@ def _attach_tools(db: Database, rows: list[dict]) -> list[dict]:
     for r in rows:
         mine = allc.get(r["id"], {"email": [], "phone": []})
         r["personal_email"] = next((c["value"] for c in mine["email"] if (c.get("line_type") or "") == "personal"), "")
-        r["all_emails"] = "; ".join(lab(c) for c in mine["email"])
+        emails = [lab(c) for c in mine["email"]]
+        tool_email = (r.get("email") or "").strip().lower()
+        if tool_email and tool_email not in {(c["value"] or "").lower() for c in mine["email"]}:
+            emails.insert(0, tool_email + " (from tool)")   # the tool's own email belongs in the full list too
+        r["all_emails"] = "; ".join(emails)
         r["all_phones"] = "; ".join(lab(c) for c in mine["phone"])
         r["company_phone"] = cphone.get(r["id"], "")
         r["quality"] = quality_band(r.get("score") or 0)
         r["tools"] = sorted(tools.get(r["id"], []))
-        r["email_status"] = status.get(r["id"], "")
+        r["email_status"] = status.get((r["id"], (r.get("email") or "").strip().lower()), "")
         _display(r)
     _job_locations(db, rows)
     return rows
