@@ -174,3 +174,8 @@ def test_any_source_coverage_lead_types_top_lists_and_tool_cards(db):
     assert next(t for t in d["tools"] if t["tool"] == "jobharvest")["last_sync"] is None
     s = d["sources"][0]
     assert s["has_email"] == 1 and s["has_email_rate"] == 100.0 and s["enriched"] == 0
+
+
+def test_city_names_are_grouped():
+    assert A._city("Greater Hyderabad Area") == A._city("Hyderabad, Telangana, India") == "Hyderabad"
+    assert A._city("Bangalore Urban") == "Bangalore Urban" and A._city("Greater Bengaluru Area") == A._city("bangalore") == "Bengaluru"

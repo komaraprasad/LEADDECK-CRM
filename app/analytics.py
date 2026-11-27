@@ -7,6 +7,7 @@ Phase 4 (or the /api/crm/events intake) records them; `outreach.connected` says 
 """
 from __future__ import annotations
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from app import crm
 from app.config import TOOL_LABELS
@@ -219,8 +220,13 @@ _HAS_PHONE = ("(COALESCE(p.phone,'') <> '' OR EXISTS (SELECT 1 FROM contact_poin
 _ENRICHED = "EXISTS (SELECT 1 FROM enrichment_items i WHERE i.person_id = p.id AND i.status='matched')"
 
 
+_CITY_ALIASES = {"Bangalore": "Bengaluru", "Bombay": "Mumbai", "Gurgaon": "Gurugram", "New Delhi": "Delhi"}
+
+
 def _city(loc: str) -> str:
-    return (loc or "").split(",")[0].strip().title()
+    """'Greater Hyderabad Area' and 'Hyderabad, Telangana, India' both count as Hyderabad."""
+    c = re.sub(r"^greater\s+|\s+(metropolitan\s+)?(area|region)$", "", (loc or "").split(",")[0].strip(), flags=re.I).strip().title()
+    return _CITY_ALIASES.get(c, c)
 
 
 def _breakdowns(db: Database) -> dict:
@@ -257,7 +263,7 @@ def _breakdowns(db: Database) -> dict:
              "facts": []}
         if tool == "jobharvest":
             jobs = _n(db, "SELECT COUNT(*) AS n FROM job_postings WHERE tool=?", (tool,))
-            t["facts"] = [["Jobs", jobs], ["Jobs with a contact", _n(db, "SELECT COUNT(DISTINCT job_id) AS n FROM lead_sources WHERE tool=? AND job_id IS NOT NULL AND person_id IS NOT NULL", (tool,))]]
+            t["facts"] = [["Jobs", jobs], ["Companies hiring", _n(db, "SELECT COUNT(DISTINCT company_id) AS n FROM job_postings WHERE tool=? AND company_id IS NOT NULL", (tool,))]]
         elif tool in ("commentminer", "talentpulse"):
             comments, posts, otw = 0, set(), 0
             for r in db.query("SELECT raw_payload FROM lead_sources WHERE tool=? AND person_id IS NOT NULL", (tool,)):
