@@ -604,7 +604,7 @@ def test_commentminer_groups_comments_emails_and_type(db):
     assert f["email"] == "dee@sampleshaper.com"                   # work email on their own company site beats gmail
     assert f["lead_type"] == "employer_contact"
     upsert_records(db, recs)
-    pid = db.one("SELECT id FROM people WHERE linkedin_url LIKE '%dee-p%'")["id"]
+    pid = db.one("SELECT id FROM people WHERE linkedin_url LIKE ?", ("%dee-p%",))["id"]
     row = L.export_rows(db, ids=[pid])[0]
     assert row["comment_count"] == 2 and row["post_title"] == "Post B"
     assert row["comment_emails"] == "pat@othervendor.com; dee.p.recruits@gmail.com"
