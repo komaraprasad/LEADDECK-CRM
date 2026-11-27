@@ -219,6 +219,8 @@ def build_xlsx(rows: list[dict], jobs: list[dict] | None = None) -> bytes:
     sheets = ([("All Leads", rows)] if with_all else []) + [(TOOL_LABELS.get(t, t), per_tool[t]) for t in tools_present]
     for name, rs in sheets:
         summary.append([name, len(rs), has(rs, "email"), has(rs, "phone"), sum(1 for r in rs if r.get("lead_type") == "employer_contact")])
+    if jobs:
+        summary.append(["Jobs (JobHarvest)", str(len(jobs)) + " jobs", "", "", str(sum(1 for j in jobs if j.get("contact_count"))) + " with a contact"])
     summary.append([])
     notes = ["The other tabs list the leads; header colours: blue = lead, green = company, purple = contact, "
              "amber = location, light blue = candidate details, pink = where it was found, grey = status.",
@@ -245,7 +247,6 @@ def build_xlsx(rows: list[dict], jobs: list[dict] | None = None) -> bytes:
         _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], TOOL_COLUMNS[t])
     if jobs:
         _jobs_sheet(wb, jobs)
-        summary.append(["JobHarvest jobs (Jobs sheet)", len(jobs), "", "", ""])
     # the leads open first; the summary is the last tab
     wb.move_sheet(summary, offset=len(wb.sheetnames) - 1)
     wb.active = 0
