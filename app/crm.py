@@ -234,8 +234,11 @@ def _days_since(ts: str | None, now: datetime | None = None) -> int | None:
     return max(0, ((now or datetime.now(timezone.utc)) - t).days)
 
 
-def board(db: Database, campaign_id: int | None = None, owner: str | None = None, q: str | None = None, per_stage: int = 50) -> dict:
+def board(db: Database, campaign_id: int | None = None, owner: str | None = None, q: str | None = None, per_stage: int = 50,
+          tool: str | None = None) -> dict:
     w, p = ["1=1"], []
+    if tool:
+        w.append("c.person_id IN (SELECT person_id FROM lead_sources WHERE tool=? AND person_id IS NOT NULL)"); p.append(tool)
     if campaign_id:
         w.append("c.person_id IN (SELECT person_id FROM campaign_leads WHERE campaign_id=?)"); p.append(int(campaign_id))
     if owner == "none":
@@ -253,7 +256,9 @@ def board(db: Database, campaign_id: int | None = None, owner: str | None = None
     for st in STAGES:
         total = db.one(f"SELECT COUNT(*) AS n {base} AND c.stage=?", p + [st])["n"]
         items = db.query(
-            "SELECT p.id AS person_id, p.full_name, p.linkedin_url, p.title, p.do_not_contact, co.name AS company_name, p.email, c.owner_email, c.next_action_at, c.stage_changed_at, "
+            "SELECT p.id AS person_id, p.full_name, p.linkedin_url, p.title, p.do_not_contact, co.name AS company_name, p.email, p.lead_type, c.owner_email, c.next_action_at, c.stage_changed_at, "
+            "(CASE WHEN COALESCE(p.phone,'') <> '' OR EXISTS (SELECT 1 FROM contact_points x WHERE x.person_id = p.id AND x.kind='phone') THEN 1 ELSE 0 END) AS has_phone, "
+            "(SELECT ei.status FROM enrichment_items ei WHERE ei.person_id = p.id ORDER BY ei.id DESC LIMIT 1) AS enrich_status, "
             "(SELECT cp.verification FROM contact_points cp WHERE cp.person_id = p.id AND cp.kind='email' AND cp.is_primary=1 LIMIT 1) AS email_status, "
             "(SELECT COUNT(*) FROM tasks t WHERE t.person_id = p.id AND t.done_at IS NULL) AS open_tasks, "
             "(SELECT MAX(e.created_at) FROM lead_events e WHERE e.person_id = p.id) AS last_activity "
@@ -261,8 +266,27 @@ def board(db: Database, campaign_id: int | None = None, owner: str | None = None
         for it in items:
             it["idle_days"] = _days_since(it.get("last_activity") or it.get("stage_changed_at"))
             it["stale"] = bool(st in STALE_DAYS and it["idle_days"] is not None and it["idle_days"] >= STALE_DAYS[st])
-        cols[st] = {"label": LABELS[st], "count": total, "items": items, "stale_after_days": STALE_DAYS.get(st)}
-    return {"stages": STAGES, "columns": cols}
+        cols[st] = {"label": LABELS[st], "count": total, "items": items, "stale_after_days": STALE_DAYS.get(st),
+                    "stale": sum(1 for it in items if it["stale"])}
+    ids = [it["person_id"] for c in cols.values() for it in c["items"]]
+    tools: dict = {}
+    for i in range(0, len(ids), 400):
+        chunk = ids[i:i + 400]
+        for r in db.query(f"SELECT DISTINCT person_id, tool FROM lead_sources WHERE person_id IN ({','.join('?' * len(chunk))})", tuple(chunk)):
+            tools.setdefault(r["person_id"], []).append(r["tool"])
+    for c in cols.values():
+        for it in c["items"]:
+            it["tools"] = sorted(tools.get(it["person_id"], []))
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    won = 0
+    for e in db.query(f"SELECT DISTINCT e.person_id, e.detail FROM lead_events e JOIN crm_leads c ON c.person_id = e.person_id JOIN people p ON p.id = c.person_id "
+                      f"LEFT JOIN companies co ON co.id = p.company_id WHERE {where} AND e.type='stage_change' AND substr(e.created_at,1,7) = ?", p + [month]):
+        if '"to": "won"' in (e["detail"] or ""):
+            won += 1
+    n = lambda *ks: sum(cols[k]["count"] for k in ks)
+    summary = {"open": n(*PIPELINE), "ready": n("ready"), "in_conversation": n("replied", "interested", "meeting"),
+               "won_this_month": won, "closed": n("won", "lost", "not_a_fit")}
+    return {"stages": STAGES, "columns": cols, "summary": summary}
 
 
 # ---------------------------------------------------------------- Phase 4 intake

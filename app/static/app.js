@@ -230,6 +230,7 @@ const LD = (() => {
       el('span', {}, barCount, ' selected'),
       el('span', { class: 'bsep' }), bulkCamp, el('button', { onclick: e => busy(e.currentTarget, () => addToCamp({ person_ids: [...st.selected] }, bulkCamp.value)) }, 'Add to campaign'),
       el('span', { class: 'bsep' }), bulkOwner, el('button', { class: 'ghost', onclick: e => busy(e.currentTarget, () => assign(bulkOwner.value)) }, 'Assign owner'),
+      el('span', { class: 'bsep' }), el('button', { onclick: e => busy(e.currentTarget, addToCrm) }, 'Add to CRM'),
       el('button', { class: 'ghost', onclick: clearSel, 'aria-label': 'Clear selection' }, 'Clear'));
     const updSel = () => { const n = st.selected.size; selCount.textContent = n ? n + ' selected' : ''; barCount.textContent = String(n); bulkBar.hidden = !n; };
     const phoneCell = r => r.phone ? r.phone : (r.company_phone ? el('span', { class: 'mut', title: 'Company switchboard, not a direct line' }, 'company: ' + r.company_phone) : '');
@@ -302,6 +303,12 @@ const LD = (() => {
       const d = await api('/api/campaigns');
       const opts = () => d.items.length ? d.items.map(c => el('option', { value: c.id }, c.name)) : [el('option', { value: '' }, 'No campaigns yet')];
       campSel.replaceChildren(...opts()); bulkCamp.replaceChildren(...opts());
+    }
+    async function addToCrm() {
+      if (!st.selected.size) return toast('Tick some rows first.', false);
+      try { const r = await api('/api/crm/bulk/add', { method: 'POST', json: { person_ids: [...st.selected] } });
+        toast(r.added ? r.added + ' lead' + (r.added === 1 ? '' : 's') + ' added to the CRM' + (r.already ? ' · ' + r.already + ' already there' : '') : 'Already in the CRM');
+        clearSel(); load(); } catch (e) { toast(e.message, false); }
     }
     async function addToCamp(body, cid = campSel.value) {
       if (!cid) return toast('Create a campaign first (Campaigns page).', false);
@@ -598,58 +605,124 @@ const LD = (() => {
   }
 
   // ---------------------------------------------------------- Pipeline
+  // ------------------------------------------------------------- CRM board
+  const TOOL_SHORT = { commentminer: ['CM', 'CommentMiner'], talentpulse: ['TP', 'TalentPulse'], hiringbadge: ['HB', 'Hiring Badge Finder'], jobharvest: ['JH', 'JobHarvest'] };
+  const CLOSED = ['won', 'lost', 'not_a_fit'];
+  let moveMenuEl = null;
+  function closeMoveMenu() { moveMenuEl?.remove(); moveMenuEl = null; document.removeEventListener('pointerdown', moveMenuOutside, true); document.removeEventListener('keydown', moveMenuKey, true); }
+  function moveMenuOutside(e) { if (moveMenuEl && !moveMenuEl.contains(e.target)) closeMoveMenu(); }
+  function moveMenuKey(e) { if (e.key === 'Escape') { e.stopPropagation(); closeMoveMenu(); } }
+  function openMoveMenu(btn, current, onPick) {   // touch- and keyboard-friendly alternative to dragging
+    closeMoveMenu();
+    const items = Object.keys(STAGE_LABEL).map(k => el('button', { role: 'menuitem', class: 'mi stage-' + k + (k === current ? ' cur' : ''), disabled: k === current,
+      onclick: e => { e.stopPropagation(); closeMoveMenu(); onPick(k); } }, el('i', {}), STAGE_LABEL[k], k === current ? el('span', { class: 'mut' }, 'current') : null));
+    moveMenuEl = el('div', { class: 'mmenu', role: 'menu', 'aria-label': 'Move to stage' }, el('div', { class: 'mh' }, 'Move to'), ...items.slice(0, 7), el('div', { class: 'msep' }), ...items.slice(7));
+    document.body.append(moveMenuEl);
+    const r = btn.getBoundingClientRect(), w = moveMenuEl.offsetWidth, h = moveMenuEl.offsetHeight;
+    moveMenuEl.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+    moveMenuEl.style.top = (r.bottom + h + 8 > innerHeight ? Math.max(8, r.top - h - 6) : r.bottom + 6) + 'px';
+    moveMenuEl.querySelector('button:not([disabled])')?.focus();
+    setTimeout(() => { document.addEventListener('pointerdown', moveMenuOutside, true); document.addEventListener('keydown', moveMenuKey, true); });
+  }
+
   async function pipelinePage() {
     const main = await shell('/pipeline');
     const camp = el('select', { 'aria-label': 'Campaign' }, el('option', { value: '' }, 'All campaigns')), owner = el('select', { 'aria-label': 'Owner' }, el('option', { value: '' }, 'Any owner'), el('option', { value: 'none' }, 'Unassigned')),
+      tool = el('select', { 'aria-label': 'Tool' }, el('option', { value: '' }, 'All tools'), ...Object.entries(TOOL_SHORT).map(([k, v]) => el('option', { value: k }, v[1]))),
       q = el('input', { type: 'text', placeholder: 'Search name or company', 'aria-label': 'Search' }), boardBox = el('div', { class: 'board' }), info = el('span', { class: 'mut' }),
-      staleOnly = el('input', { type: 'checkbox' });
+      staleOnly = el('input', { type: 'checkbox' }), stats = el('div', { class: 'crm-stats' });
     const [cs, us] = await Promise.all([api('/api/campaigns'), api('/api/crm/users')]);
     cs.items.forEach(c => camp.append(el('option', { value: c.id }, c.name))); us.items.forEach(u => owner.append(el('option', { value: u.email }, u.email)));
     const today = localToday(); let landed = null, first = true;
-    const funnel = el('div', { class: 'funnel', 'aria-label': 'Pipeline summary' });
+    const filtered = () => !!(camp.value || owner.value || tool.value || q.value.trim());
+
+    async function move(pid, from, to) {
+      if (from === to) return;
+      if (await changeStage(pid, to)) { toast('Moved to ' + STAGE_LABEL[to]); landed = pid; }
+      load();
+    }
+    function card(it, st, col) {
+      const name = nameOf(it) || 'Lead', hasEmail = !!it.email;
+      const contact = hasEmail ? null : it.enrich_status === 'not_found' ? el('span', { class: 'tag warn', title: 'RocketReach looked this person up and found no contact details' }, 'Not found by RocketReach')
+        : it.enrich_status === 'mismatch' ? el('span', { class: 'tag bad', title: 'RocketReach matched a different person' }, 'Wrong person') : it.enrich_status === 'error' ? el('span', { class: 'tag bad' }, 'Lookup failed')
+        : el('span', { class: 'tag', title: 'No email yet. Add the lead to a campaign and enrich it.' }, 'Not enriched yet');
+      const stop = e => e.stopPropagation();
+      const moreBtn = el('button', { class: 'cbtn', 'aria-label': 'Move ' + name + ' to another stage', 'aria-haspopup': 'menu', title: 'Move to…',
+        onclick: e => { stop(e); openMoveMenu(e.currentTarget, st, to => move(it.person_id, st, to)); } }, '⋯');
+      const acts = el('div', { class: 'cacts' },
+        it.linkedin_url ? el('a', { class: 'cbtn', href: it.linkedin_url, target: '_blank', rel: 'noopener', title: 'Open LinkedIn profile', 'aria-label': 'Open LinkedIn profile of ' + name, onclick: stop }, 'in') : null,
+        hasEmail ? el('button', { class: 'cbtn', title: 'Copy ' + it.email, 'aria-label': 'Copy email of ' + name, onclick: async e => { stop(e); try { await navigator.clipboard.writeText(it.email); toast('Email copied'); } catch (er) { toast('Could not copy', false); } } }, '✉') : null,
+        moreBtn);
+      const c = el('div', { class: 'lcard' + (it.do_not_contact ? ' dnc' : ''), draggable: 'true', tabindex: 0, role: 'button', 'data-pid': it.person_id, 'aria-label': name + ', ' + STAGE_LABEL[st] + '. Press Enter for details' },
+        el('div', { class: 'top' }, avatarFor(name), el('div', {}, el('div', { class: 'lname' }, nameNode(it, 'Unnamed')),
+          el('div', { class: 'mut ell' }, [it.title, it.company_name].filter(Boolean).join(' · ') || '—')), acts),
+        el('div', { class: 'lsrc' }, ...(it.tools || []).map(t => el('span', { class: 'tb t-' + t, title: 'From ' + (TOOL_SHORT[t] || [t, t])[1] }, (TOOL_SHORT[t] || [t])[0])),
+          it.lead_type && it.lead_type !== 'unknown' ? el('span', { class: 'mut lt' }, it.lead_type === 'candidate' ? 'Candidate' : 'Employer contact') : null,
+          el('span', { class: 'ci' + (hasEmail ? ' on' + (it.email_status === 'valid' ? ' ok' : '') : ''), title: hasEmail ? 'Email' + (it.email_status ? ' · ' + it.email_status : '') : 'No email' }, '✉'),
+          el('span', { class: 'ci' + (it.has_phone ? ' on' : ''), title: it.has_phone ? 'Has phone' : 'No phone' }, '☎')),
+        el('div', { class: 'lmeta' }, contact, it.email_status === 'valid' ? el('span', { class: 'tag cand' }, 'email verified') : it.email_status === 'invalid' ? el('span', { class: 'tag bad' }, 'email invalid') : null,
+          it.stale ? el('span', { class: 'tag bad', title: 'No activity for ' + it.idle_days + ' days (flagged after ' + col.stale_after_days + ')' }, '⏱ ' + it.idle_days + 'd idle') : null,
+          it.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null, it.open_tasks ? el('span', { class: 'tag' }, it.open_tasks + ' task' + (it.open_tasks > 1 ? 's' : '')) : null,
+          it.next_action_at ? el('span', { class: 'tag ' + (it.next_action_at.slice(0, 10) < today ? 'bad' : '') }, fmtDue(it.next_action_at, today)) : null, initials(it.owner_email)));
+      c.addEventListener('click', () => openDrawer(it.person_id, load));
+      c.addEventListener('keydown', e => { if (e.target !== c) return; if (e.key === 'Enter') openDrawer(it.person_id, load); if (e.key === 'm' || e.key === 'M') { e.preventDefault(); moreBtn.click(); } });
+      c.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', it.person_id + '|' + st); c.classList.add('drag'); boardBox.classList.add('dragging'); });
+      c.addEventListener('dragend', () => { c.classList.remove('drag'); boardBox.classList.remove('dragging'); });
+      return c;
+    }
+    function dropTarget(node, st) {
+      node.addEventListener('dragover', e => { e.preventDefault(); node.classList.add('over'); });
+      node.addEventListener('dragleave', e => { if (!node.contains(e.relatedTarget)) node.classList.remove('over'); });
+      node.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); node.classList.remove('over'); const [p0, from] = e.dataTransfer.getData('text/plain').split('|'); if (+p0) move(+p0, from, st); });
+    }
+    const cardsFor = (col, st) => (staleOnly.checked ? col.items.filter(it => it.stale) : col.items).map(it => card(it, st, col));
+    const more = col => col.count > col.items.length && !staleOnly.checked ? el('div', { class: 'mut', style: 'padding:6px' }, '+' + (col.count - col.items.length) + ' more (use search or filters)') : null;
+
     async function load() {
-      const p = new URLSearchParams(); if (camp.value) p.set('campaign_id', camp.value); if (owner.value) p.set('owner', owner.value); if (q.value.trim()) p.set('q', q.value.trim());
+      const p = new URLSearchParams(); if (camp.value) p.set('campaign_id', camp.value); if (owner.value) p.set('owner', owner.value); if (tool.value) p.set('tool', tool.value); if (q.value.trim()) p.set('q', q.value.trim());
       let d; try { d = await api('/api/crm/board?' + p); } catch (e) { toast(e.message, false); return; }
-      let total = 0;
-      boardBox.replaceChildren(...d.stages.map(st => {
-        const col = d.columns[st]; total += col.count;
-        const shown = staleOnly.checked ? col.items.filter(it => it.stale) : col.items;
-        const body = el('div', { class: 'col-body' }, ...shown.map(it => {
-          const card = el('div', { class: 'lcard' + (it.do_not_contact ? ' dnc' : ''), draggable: 'true', tabindex: 0, role: 'button', 'data-pid': it.person_id, 'aria-label': (nameOf(it) || 'Lead') + ', open details' },
-            el('div', { class: 'top' }, avatarFor(nameOf(it)), el('div', {}, el('div', { class: 'lname' }, nameNode(it, 'Unnamed')), el('div', { class: 'mut', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, [it.title, it.company_name].filter(Boolean).join(' · ') || '—'))),
-            el('div', { class: 'lmeta' }, it.email_status ? el('span', { class: 'tag ' + (it.email_status === 'valid' ? 'cand' : it.email_status === 'invalid' ? 'bad' : '') }, 'email ' + it.email_status) : null,
-              it.stale ? el('span', { class: 'tag bad', title: 'No activity for ' + it.idle_days + ' days (flagged after ' + col.stale_after_days + ')' }, '⏱ ' + it.idle_days + 'd idle') : null,
-              it.do_not_contact ? el('span', { class: 'tag bad' }, 'do not contact') : null, it.open_tasks ? el('span', { class: 'tag' }, it.open_tasks + ' task' + (it.open_tasks > 1 ? 's' : '')) : null,
-              it.next_action_at ? el('span', { class: 'tag ' + (it.next_action_at.slice(0, 10) < today ? 'bad' : '') }, fmtDue(it.next_action_at, today)) : null, initials(it.owner_email)));
-          card.addEventListener('click', () => openDrawer(it.person_id, load));
-          card.addEventListener('keydown', e => { if (e.key === 'Enter') openDrawer(it.person_id, load); });
-          card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', it.person_id + '|' + st); card.classList.add('drag'); });
-          card.addEventListener('dragend', () => card.classList.remove('drag'));
-          return card;
-        }), col.count > col.items.length && !staleOnly.checked ? el('div', { class: 'mut', style: 'padding:6px' }, '+' + (col.count - col.items.length) + ' more (use search or filters)') : null,
-          !shown.length ? el('div', { class: 'empty' }, staleOnly.checked && col.count ? 'Nothing stale here' : 'Drop a lead here') : null);
-        const colEl = el('section', { class: 'col stage-' + st, 'aria-label': col.label }, el('header', {}, el('span', {}, col.label), el('span', { class: 'count' }, col.count)), body);
-        colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.classList.add('over'); });
-        colEl.addEventListener('dragleave', () => colEl.classList.remove('over'));
-        colEl.addEventListener('drop', async e => { e.preventDefault(); colEl.classList.remove('over'); const [p0, from] = e.dataTransfer.getData('text/plain').split('|'), pid = +p0; if (!pid || from === st) return; if (await changeStage(pid, st)) { toast('Moved to ' + col.label); landed = pid; } load(); });
-        return colEl;
-      }));
-      const nStale = Object.values(d.columns).reduce((n, c) => n + c.items.filter(i => i.stale).length, 0);
-      // pipeline summary strip: one segment per stage, sized by how many leads are in it
-      const segs = d.stages.filter(k => d.columns[k].count > 0);
-      funnel.replaceChildren(el('div', { class: 'bar', role: 'img', 'aria-label': d.stages.map(k => d.columns[k].label + ' ' + d.columns[k].count).join(', ') }, ...segs.map(k => el('div', { class: 'seg stage-' + k, style: '--n:' + d.columns[k].count, title: d.columns[k].label + ': ' + d.columns[k].count,
-          onclick: () => boardBox.querySelector('.stage-' + k)?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }) }))),
-        total ? el('div', { class: 'legend' }, ...d.stages.filter(k => d.columns[k].count > 0).map(k => el('button', { class: 'stage-' + k, onclick: () => boardBox.querySelector('.stage-' + k)?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }) }, el('i', {}), d.columns[k].label + ' ', el('b', {}, String(d.columns[k].count))))) : null);
-      funnel.hidden = !total;
+      const S = d.summary || {}, total = d.stages.reduce((n, k) => n + d.columns[k].count, 0);
+      const nStale = Object.values(d.columns).reduce((n, c) => n + (c.stale || 0), 0);
+      const tile = (l, v, s, tone) => el('div', { class: 'cst' + (tone ? ' ' + tone : '') }, el('div', { class: 'kl' }, l), el('div', { class: 'kv' }, nf(v)), el('div', { class: 'ks' }, s));
+      stats.replaceChildren(tile('Open leads', S.open, 'in the pipeline now'), tile('Ready to contact', S.ready, 'verified email, not contacted', S.ready ? 'go' : ''),
+        tile('In conversation', S.in_conversation, 'replied · interested · meeting'), tile('Won this month', S.won_this_month, nf(S.closed) + ' closed in total'),
+        tile('Needs attention', nStale, nStale ? 'idle too long, see red clocks' : 'nothing idle', nStale ? 'warn' : ''));
+      stats.hidden = !total && !filtered();
+      if (!total) {
+        boardBox.replaceChildren(filtered() ? emptyState('search', 'No leads match these filters', 'Try another tool, owner or search.', el('button', { class: 'ghost', onclick: () => { camp.value = owner.value = tool.value = ''; q.value = ''; staleOnly.checked = false; load(); } }, 'Clear filters'))
+          : emptyState('pipeline', 'Your CRM is empty', 'Pick leads on the Leads page and click “Add to CRM”, or add them to a campaign. They show up here as New and move to Ready once enrichment finds a verified email.',
+            el('a', { class: 'btn', href: '/leads' }, 'Go to Leads'), ' ', el('a', { class: 'btn ghost', href: '/campaigns' }, 'Open Campaigns')));
+        info.textContent = ''; return;
+      }
+      const cols = d.stages.filter(k => !CLOSED.includes(k)).map(st => {
+        const col = d.columns[st], slim = !col.count && !filtered();
+        const colEl = el('section', { class: 'col stage-' + st + (slim ? ' slim' : ''), 'aria-label': col.label + ', ' + col.count + ' leads' },
+          el('header', { title: col.stale_after_days ? 'Flagged as idle after ' + col.stale_after_days + ' days without activity' : null }, el('span', {}, col.label),
+            el('span', { class: 'hc' }, col.stale ? el('span', { class: 'stl', title: col.stale + ' idle' }, '⏱ ' + col.stale) : null, el('span', { class: 'count' }, col.count))),
+          slim ? el('div', { class: 'slim-hint' }, 'Drop here') : el('div', { class: 'col-body' }, ...cardsFor(col, st), more(col),
+            !col.count ? el('div', { class: 'empty' }, 'Drop a lead here') : staleOnly.checked && !col.items.some(i => i.stale) ? el('div', { class: 'empty' }, 'Nothing idle here') : null));
+        dropTarget(colEl, st); return colEl;
+      });
+      const closedN = CLOSED.reduce((n, k) => n + d.columns[k].count, 0);
+      const closed = el('section', { class: 'col closed', 'aria-label': 'Closed, ' + closedN + ' leads' },
+        el('header', {}, el('span', {}, 'Closed'), el('span', { class: 'count' }, closedN)),
+        el('div', { class: 'col-body' }, ...CLOSED.map(st => { const col = d.columns[st];
+          const z = el('div', { class: 'zone stage-' + st }, el('div', { class: 'zh' }, el('span', {}, col.label), el('span', { class: 'count' }, col.count)), ...cardsFor(col, st), more(col),
+            !col.count ? el('div', { class: 'zempty' }, 'Drop to mark ' + col.label.toLowerCase()) : null);
+          dropTarget(z, st); return z; })));
+      boardBox.replaceChildren(...cols, closed);
       if (first) { first = false; boardBox.classList.add('deal'); [...boardBox.querySelectorAll('.lcard')].forEach((c, i) => c.style.setProperty('--i', Math.min(i, 14))); setTimeout(() => boardBox.classList.remove('deal'), 1800); }
       if (landed) { boardBox.querySelector('[data-pid="' + landed + '"]')?.classList.add('landed'); landed = null; }
-      info.textContent = total + ' lead' + (total === 1 ? '' : 's') + (total ? (nStale ? ' · ' + nStale + ' stale' : '') : ' — add leads to a campaign to see them here');
+      info.textContent = total + ' lead' + (total === 1 ? '' : 's') + (nStale ? ' · ' + nStale + ' idle' : '');
     }
-    for (const c of [camp, owner, staleOnly]) c.addEventListener('change', load);
+    for (const c of [camp, owner, tool, staleOnly]) c.addEventListener('change', load);
     let qTimer = null; q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(load, 350); });
     const qBox = withSuggest(q, async t => (await api('/api/leads/suggest?field=all&q=' + encodeURIComponent(t))).items.filter(i => i.field === 'name' || i.field === 'company'), it => { q.value = it.value; load(); }, load);
-    main.append(el('h1', {}, 'CRM pipeline'), el('div', { class: 'sub' }, 'Every lead you are working, by stage. Drag a card to move it, or click it for details. A red clock means no recent activity.'),
-      el('div', { class: 'card toolbar' }, el('div', { class: 'row' }, camp, owner, qBox, el('label', { class: 'mut', title: 'Leads with no activity for several days in a stage where someone should be acting' }, staleOnly, ' stale only'), el('button', { class: 'ghost', onclick: load }, 'Refresh'), info)), funnel, boardBox);
+    main.append(el('div', { class: 'row between', style: 'flex-wrap:wrap;gap:12px;align-items:flex-end' },
+        el('div', {}, el('h1', {}, 'CRM'), el('div', { class: 'sub', style: 'margin-bottom:0' }, 'Every lead you are working, by stage. Drag a card, or use ⋯ to move it. Click a card for details.')),
+        el('a', { class: 'btn ghost', href: '/leads' }, '+ Add leads')),
+      stats,
+      el('div', { class: 'card toolbar' }, el('div', { class: 'row' }, camp, tool, owner, qBox, el('label', { class: 'mut', title: 'Leads with no activity for several days in a stage where someone should be acting' }, staleOnly, ' Idle only'), el('button', { class: 'ghost', onclick: load }, 'Refresh'), info)), boardBox);
     await load();
   }
 

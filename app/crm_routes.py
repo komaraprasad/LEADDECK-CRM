@@ -34,7 +34,8 @@ def register(app, db, settings, login_required, current_user):
     @login_required
     def crm_board():
         per = min(intarg("per_stage") or 50, 200)
-        return jsonify(crm.board(db, intarg("campaign_id"), request.args.get("owner") or None, (request.args.get("q") or "").strip() or None, per))
+        return jsonify(crm.board(db, intarg("campaign_id"), request.args.get("owner") or None, (request.args.get("q") or "").strip() or None, per,
+                               (request.args.get("tool") or "").strip() or None))
 
     @app.get("/api/crm/leads/<int:pid>")
     @login_required
@@ -46,6 +47,23 @@ def register(app, db, settings, login_required, current_user):
         lead["tasks"] = crm.list_tasks(db, status="all", pid=pid)
         lead["timeline"] = crm.timeline(db, pid)
         return jsonify(lead)
+
+    @app.post("/api/crm/bulk/add")
+    @login_required
+    def crm_bulk_add():
+        ids = body().get("person_ids")
+        if not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, int) for i in ids):
+            return bad("person_ids must be a list of 1-500 lead ids")
+        added = already = 0
+        with db.transaction():
+            for pid in ids:
+                if not db.one("SELECT 1 AS x FROM people WHERE id=?", (pid,)):
+                    continue
+                if crm.ensure_lead(db, pid, current_user()["email"]):
+                    crm.refresh_readiness(db, pid); added += 1
+                else:
+                    already += 1
+        return jsonify(added=added, already=already, skipped=len(ids) - added - already)
 
     @app.post("/api/crm/bulk/owner")
     @login_required

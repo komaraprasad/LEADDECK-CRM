@@ -242,3 +242,31 @@ def test_dashboard_sidebar_gets_new_links_even_if_file_is_old(wapp):
     html = c.get("/").data.decode("utf-8")
     assert "['/pipeline','CRM']" in html and "['/tasks','Tasks']" in html
     assert c.get("/pipeline").status_code == 200 and c.get("/tasks").status_code == 200
+
+
+def test_board_tool_filter_card_facts_and_summary(db):
+    import json as _j
+    a, b = mkperson(db, "Ana", "ua", "Acme"), mkperson(db, "Ben", "ub", "Globex")
+    mkcamp(db, [a, b]); crm.backfill(db)
+    db.insert("lead_sources", {"tool": "talentpulse", "kind": "person", "source_key": "k1", "person_id": a, "raw_payload": _j.dumps({})})
+    db.insert("contact_points", {"person_id": b, "kind": "phone", "value": "+10", "provider": "rr"})
+    run = db.insert("enrichment_runs", {"campaign_id": 1, "provider": "rr", "status": "done"})
+    db.insert("enrichment_items", {"run_id": run, "person_id": a, "provider": "rr", "status": "not_found"})
+    crm.set_stage(db, b, "won", "me@x.com")
+    full = crm.board(db)
+    ana = full["columns"]["new"]["items"][0]
+    assert ana["tools"] == ["talentpulse"] and ana["enrich_status"] == "not_found" and ana["has_phone"] == 0
+    assert full["columns"]["won"]["items"][0]["has_phone"] == 1
+    assert full["summary"]["won_this_month"] == 1 and full["summary"]["open"] == 1 and full["summary"]["closed"] == 1
+    only = crm.board(db, tool="talentpulse")
+    assert only["columns"]["new"]["count"] == 1 and only["columns"]["won"]["count"] == 0
+
+
+def test_bulk_add_to_crm(wapp):
+    c = logged(wapp); db = wapp.config["DB"]
+    a, b = mkperson(db, "Cy", "uc", "Acme"), mkperson(db, "Di", "ud", "Acme")
+    r = c.post("/api/crm/bulk/add", json={"person_ids": [a, b, 99999]}).get_json()
+    assert r == {"added": 2, "already": 0, "skipped": 1}
+    assert c.post("/api/crm/bulk/add", json={"person_ids": [a]}).get_json()["already"] == 1
+    assert c.post("/api/crm/bulk/add", json={"person_ids": "x"}).status_code == 400
+    assert c.get("/api/crm/board").get_json()["columns"]["new"]["count"] == 2
