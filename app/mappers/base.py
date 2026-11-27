@@ -43,7 +43,12 @@ def clean(v: object) -> str | None:
     if isinstance(v, (list, tuple)):
         v = ", ".join(str(x).strip() for x in v if str(x).strip())
     s = str(v).strip()
-    return s or None
+    # tools write placeholders instead of leaving a field empty; they are not data (a company named
+    # "Not available" would even group unrelated people under one fake company)
+    return None if s.lower() in _PLACEHOLDERS else (s or None)
+
+
+_PLACEHOLDERS = {"not available", "not provided", "n/a", "na", "none", "null", "nil", "-", "--", "unknown", "not found"}
 
 
 def pick(row: dict, *names: str) -> str | None:
@@ -55,7 +60,8 @@ def pick(row: dict, *names: str) -> str | None:
     return None
 
 
-def parse_dt(v: object) -> datetime | None:
+def parse_dt(v: object, assume_tz=None) -> datetime | None:
+    """assume_tz: the zone of a timestamp that carries none, when a tool is known to differ from TOOL_UTC_OFFSET."""
     s = clean(v)
     if not s:
         return None
@@ -63,7 +69,7 @@ def parse_dt(v: object) -> datetime | None:
     for candidate in (s, s.replace(" ", "T", 1)):
         try:
             d = datetime.fromisoformat(candidate)
-            return (d if d.tzinfo else d.replace(tzinfo=_tool_tz())).astimezone(timezone.utc)
+            return (d if d.tzinfo else d.replace(tzinfo=assume_tz or _tool_tz())).astimezone(timezone.utc)
         except ValueError:
             pass
     return None

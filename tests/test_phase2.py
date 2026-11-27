@@ -730,3 +730,25 @@ def test_jobharvest_export_has_contacts_sheet_and_jobs_sheet(db):
     assert js.max_row == 3                                                  # both jobs, also the one with no contact
     got = {js.cell(row=r, column=1).value: js.cell(row=r, column=jh.index("Contacts") + 1).value for r in (2, 3)}
     assert got == {"ML Engineer": 1, "Data Engineer": 0}
+
+
+def test_talentpulse_utc_times_placeholders_and_sheet(db):
+    import io
+    from openpyxl import load_workbook
+    from app import leads as L
+    from app.mappers.talentpulse import map_payload
+    from app.merge import upsert_records
+    from app.exporter import build_xlsx
+    row = {"id": 9, "full_name": "Ravi K", "linkedin_url": "https://linkedin.com/sales/lead/ACwAAExampleID9", "current_title": "Not available",
+           "company_name": "Not available", "location": "Hyderabad", "first_found_at": "2026-11-27 08:50:00", "otw_status": "Yes"}
+    rec = map_payload({"leads": [row]}).records[0]
+    assert rec.collected_at.strftime("%H:%M") == "08:50"          # TalentPulse stores UTC: not shifted again
+    assert rec.fields["title"] is None and rec.fields["company_name"] is None
+    upsert_records(db, [rec])
+    assert db.one("SELECT COUNT(*) AS n FROM companies WHERE name='Not available'")["n"] == 0
+    pid = db.one("SELECT id FROM people WHERE full_name='Ravi K'")["id"]
+    ws = load_workbook(io.BytesIO(build_xlsx(L.export_rows(db, ids=[pid]))))["TalentPulse"]
+    hdr = [c.value for c in ws[1]]
+    assert hdr[:8] == ["Name", "Title", "Headline", "Lead Type", "LinkedIn", "Company", "Experience", "Location"]
+    assert "Company Industry" not in hdr and "Name Source" not in hdr and "Date Collected (UTC)" in hdr
+    assert ws.cell(row=2, column=hdr.index("Date Collected (UTC)") + 1).value.endswith("08:50")

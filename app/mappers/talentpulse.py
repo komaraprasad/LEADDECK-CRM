@@ -1,5 +1,6 @@
 """TalentPulse GET /api/leads -> candidate people (fields read from reference/talentpulse-main)."""
 from __future__ import annotations
+from datetime import timezone
 from app.records import NormalizedRecord, MapResult
 from app.mappers.base import norm_row, rows_from, pick, parse_dt
 
@@ -33,7 +34,7 @@ def map_payload(payload: object) -> MapResult:
             }
             key = pick(r, "id", "lead_id") or url or f"{name}|{fields['company_name']}"
             res.records.append(NormalizedRecord(TOOL, "person", f"{TOOL}:{key}", raw, fields,
-                                                parse_dt(pick(r, "first_found_at", "created_at"))))
+                                                parse_dt(pick(r, "first_found_at", "created_at"), timezone.utc)))   # TalentPulse stores UTC (its own export shows them +5:30)
         except Exception as e:  # skip bad row, keep going
             res.errors.append(f"row {i}: {e}")
     return res

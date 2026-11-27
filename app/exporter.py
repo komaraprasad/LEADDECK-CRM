@@ -57,10 +57,11 @@ TOOL_COLUMNS = {
                      "tool_emails", "comment_emails", "phone", "comment_count", "all_comments", "post_title", "post_url",
                      "latest_interaction", "email_status", "personal_email", "all_emails", "all_phones", "company_phone",
                      "title_only", "location", "tools"],   # Title / Location: CommentMiner gives none; enrichment fills them
-    # candidates: their skills and availability matter; employer industry/size does not
-    "talentpulse": [k for k in _BASE if k not in ("company_industry", "company_size")][:7]
-                   + ["search_role", "experience", "skills", "open_to_work", "qualification"]
-                   + [k for k in _BASE if k not in ("company_industry", "company_size")][7:] + _STATUS,
+    # agreed from TalentPulse's own export (candidates: no employer industry/size); phone & extra emails come
+    # only from enrichment, so they close the sheet with the other enrichment columns
+    "talentpulse": ["display_name", "role", "headline", "lead_type", "linkedin_url", "company_name", "experience", "location",
+                    "open_to_work", "skills", "search_role", "qualification", "email", "email_status", "first_seen", "last_seen",
+                    "phone", "personal_email", "all_emails", "all_phones", "company_phone", "tools"],
 }
 # Shown even when empty in a sheet: an empty Email/Phone column tells the reader what is still missing.
 _ALWAYS = {"display_name", "role", "company_name", "email", "phone", "linkedin_url", "tools"}
