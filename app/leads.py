@@ -1,6 +1,7 @@
 """Lead listing, filtering, export rows and campaigns (shared filter logic)."""
 from __future__ import annotations
 import json
+import re
 from app.db import Database, now_iso
 
 LEAD_TYPES = ("candidate", "employer_contact", "unknown")
@@ -69,6 +70,38 @@ def _job_locations(db: Database, rows: list[dict]) -> None:
             r["hiring_for"], r["job_url"] = j["title"], j["url"]
             if not (r.get("location") or "").strip():
                 r["job_location"] = j["loc"]
+    _post_context(db, rows, ids, ph)
+
+
+def _post_title(t: str) -> str:
+    # CommentMiner falls back to the post's URN when it has no text; that is not a title anyone can read
+    return "" if re.fullmatch(r"(?i)\s*urn:li:\w+:\d+\s*", t or "") else (t or "").strip()
+
+
+def _post_context(db: Database, rows: list[dict], ids: list, ph: str) -> None:
+    """CommentMiner commenters: the post they commented on and what they wrote (newest comment), and how many
+    comments they left. Display/export only."""
+    for r in rows:
+        r.setdefault("post_title", ""); r.setdefault("post_url", ""); r.setdefault("comment", ""); r.setdefault("comment_count", 0)
+    found: dict[int, dict] = {}
+    for s in db.query(f"SELECT person_id, raw_payload FROM lead_sources WHERE tool='commentminer' AND kind='person' "
+                      f"AND person_id IN ({ph}) ORDER BY collected_at DESC, id DESC", ids):
+        try:
+            raw = json.loads(s["raw_payload"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        txt = lambda k: raw[k].strip() if isinstance(raw.get(k), str) else ""
+        cur = found.setdefault(s["person_id"], {"n": 0})
+        cur["n"] += 1
+        if "url" not in cur:   # newest comment wins
+            cur.update(title=_post_title(txt("post_title")), url=txt("post_url"), comment=txt("comment_text")[:500])
+    for r in rows:
+        c = found.get(r["id"])
+        if c and "url" in c:
+            r["post_title"] = c["title"] or ("LinkedIn post" if c["url"] else "")
+            r["post_url"], r["comment"], r["comment_count"] = c["url"], c["comment"], c["n"]
 
 
 def quality_band(score: int) -> str:

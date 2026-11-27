@@ -563,3 +563,28 @@ def test_enrichment_fills_blank_location_only(db):
     E.run_enrichment(db, FakeProvider({a: res, b: ProviderResult("matched", [ContactValue("b@x.com", "valid", "A")], credits_used=1, matched_name="B", matched_location="Delhi")}), mkcamp(db, [a, b]), 5, 5)
     assert db.one("SELECT location FROM people WHERE id=?", (a,))["location"] == "Bengaluru, India"
     assert db.one("SELECT location FROM people WHERE id=?", (b,))["location"] == "Chennai"  # never overwritten
+
+
+def test_commentminer_company_name_from_headline_or_url():
+    from app.mappers.commentminer import company_name, map_payload
+    assert company_name("Recruiter at Example Staffing INC | C2C", None, "https://examplestaffing.com") == "Example Staffing INC"
+    # headline names another company than the website: the website wins
+    assert company_name("Recruiter at Other Corp", None, "https://samplesoft.com") == "Samplesoft"
+    assert company_name("Recruiter", "https://www.linkedin.com/company/sample-group-inc/", None) == "Sample Group Inc"
+    assert company_name("Recruiter at Solo Firm", None, None) == "Solo Firm"
+    assert company_name("Senior Recruiter", None, None) is None
+    rec = map_payload({"comments": [{"author_name": "Pat Q", "author_profile_url": "https://www.linkedin.com/in/pat-q",
+                                     "author_headline": "Recruiter at Example Staffing INC", "company_website": "https://examplestaffing.com"}]}).records[0]
+    assert rec.fields["company_name"] == "Example Staffing INC"
+
+
+def test_commentminer_lead_shows_post_and_comment(db):
+    from app import leads as L
+    a = mkperson(db, "Pat Q", "https://www.linkedin.com/in/pat-q", None)
+    for i, (title, text, ts) in enumerate([("Urn:Li:Activity:123", "older comment", "2026-11-25T10:00:00+00:00"),
+                                           ("Hi bench sales recruiters", "Interested, please share", "2026-11-26T10:00:00+00:00")]):
+        db.insert("lead_sources", {"tool": "commentminer", "kind": "person", "source_key": "cm:%d" % i, "person_id": a, "collected_at": ts,
+                                   "raw_payload": json.dumps({"post_title": title, "post_url": "https://www.linkedin.com/feed/update/%d" % i, "comment_text": text})})
+    row = L.export_rows(db, ids=[a])[0]
+    assert (row["post_title"], row["comment"], row["comment_count"]) == ("Hi bench sales recruiters", "Interested, please share", 2)
+    assert L._post_title("Urn:Li:Activity:7530648825317998592") == ""

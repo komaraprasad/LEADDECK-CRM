@@ -8,6 +8,7 @@ EXPORT_COLUMNS = [
     # Name: the tool's name, else one read from the LinkedIn link (then Name Source says so)
     ("display_name", "Name"), ("name_source", "Name Source"), ("title", "Title"), ("headline", "Headline"), ("company_name", "Company"), ("company_industry", "Company Industry"), ("company_size", "Company Size"),
     ("hiring_for", "Hiring For"), ("job_url", "Job URL"),
+    ("post_title", "Commented On Post"), ("post_url", "Post URL"), ("comment", "Their Comment"), ("comment_count", "Comments"),
     ("location", "Location"), ("job_location", "Job Location"), ("linkedin_url", "LinkedIn URL"), ("email", "Email"), ("email_status", "Email Status"), ("personal_email", "Personal Email"), ("all_emails", "All Emails"),
     ("phone", "Phone"), ("all_phones", "All Phones"), ("company_phone", "Company Phone"),
     ("lead_type", "Lead Type"), ("do_not_contact_text", "Do Not Contact"), ("tools", "Found By"), ("last_seen", "Last Seen"),
