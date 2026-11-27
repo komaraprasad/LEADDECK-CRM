@@ -81,3 +81,12 @@ def test_commentminer_sheet_shows_enrichment_title_and_location():
     assert ws.cell(row=2, column=hdr.index("Title") + 1).value == "Bench Sales Recruiter"
     assert ws.cell(row=2, column=hdr.index("Location") + 1).value == "Hyderabad"
     assert ws.cell(row=2, column=hdr.index("Headline / Role") + 1).value == "Recruiter at X"
+
+
+def test_title_column_never_repeats_the_headline():
+    rows = [{"full_name": "No Title", "tools": "talentpulse", "headline": "Long about-me text", "title": None},
+            {"full_name": "Has Title", "tools": "talentpulse", "headline": "AI Engineer", "title": "AI Engineer"}]
+    ws = load_workbook(io.BytesIO(build_xlsx(rows)))["TalentPulse"]; hdr = [c.value for c in ws[1]]
+    t, h = hdr.index("Title") + 1, hdr.index("Headline") + 1
+    assert (ws.cell(row=2, column=t).value, ws.cell(row=2, column=h).value) in ((None, "Long about-me text"), ("", "Long about-me text"))
+    assert ws.cell(row=3, column=t).value == "AI Engineer" and ws.cell(row=3, column=h).value in (None, "")

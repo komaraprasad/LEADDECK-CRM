@@ -44,7 +44,7 @@ _BASE = ["display_name", "name_source", "role", "headline", "lead_type", "linked
 _STATUS = ["tools", "do_not_contact_text", "last_seen"]
 TOOL_COLUMNS = {
     # agreed from Hiring Badge Finder's own export; it gives no email/phone, so those are the enrichment group
-    "hiringbadge": ["display_name", "role", "headline", "lead_type", "linkedin_url", "company_name", "company_industry",
+    "hiringbadge": ["display_name", "title_only", "headline", "lead_type", "linkedin_url", "company_name", "company_industry",
                     "company_size", "company_website", "hiring_for", "hiring_status", "location", "first_seen", "last_seen",
                     "email", "email_status", "personal_email", "all_emails", "phone", "all_phones", "company_phone", "tools"],
     # agreed from JobHarvest's own export: contacts come as a link only, so Title / Location are enrichment
@@ -59,7 +59,7 @@ TOOL_COLUMNS = {
                      "title_only", "location", "tools"],   # Title / Location: CommentMiner gives none; enrichment fills them
     # agreed from TalentPulse's own export (candidates: no employer industry/size); phone & extra emails come
     # only from enrichment, so they close the sheet with the other enrichment columns
-    "talentpulse": ["display_name", "role", "headline", "lead_type", "linkedin_url", "company_name", "experience", "location",
+    "talentpulse": ["display_name", "title_only", "headline", "lead_type", "linkedin_url", "company_name", "experience", "location",
                     "open_to_work", "skills", "search_role", "qualification", "email", "email_status", "first_seen", "last_seen",
                     "phone", "personal_email", "all_emails", "all_phones", "company_phone", "tools"],
 }
@@ -94,7 +94,7 @@ def _value(r: dict, k: str):
         return r.get("role") or r.get("title") or r.get("headline") or ""
     if k == "headline":   # only when it says something the Title column does not already show
         t, h = (r.get("title") or "").strip(), (r.get("headline") or "").strip()
-        return h if t and h and h.lower() != t.lower() else ""
+        return h if h and h.lower() != t.lower() else ""
     v = r.get(k)
     if k == "tools":
         names = v if isinstance(v, list) else [t.strip() for t in str(v or "").split(",") if t.strip()]
