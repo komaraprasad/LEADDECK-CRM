@@ -47,7 +47,11 @@ TOOL_COLUMNS = {
     "hiringbadge": ["display_name", "role", "headline", "lead_type", "linkedin_url", "company_name", "company_industry",
                     "company_size", "company_website", "hiring_for", "hiring_status", "location", "first_seen", "last_seen",
                     "email", "email_status", "personal_email", "all_emails", "phone", "all_phones", "company_phone", "tools"],
-    "jobharvest": _BASE + ["job_location", "hiring_for", "job_url"] + _STATUS,
+    # agreed from JobHarvest's own export: contacts come as a link only, so Title / Location are enrichment
+    "jobharvest": ["display_name", "name_source", "lead_type", "linkedin_url", "company_name", "company_industry", "company_size",
+                   "company_url", "hiring_for", "job_location", "job_url", "first_seen", "last_seen",
+                   "title_only", "location", "email", "email_status", "personal_email", "all_emails", "phone", "all_phones",
+                   "company_phone", "tools"],
     # agreed with the user from CommentMiner's own export; enrichment columns kept (empty until enriched)
     "commentminer": ["display_name", "headline_role", "lead_type", "linkedin_url", "company_name", "company_website", "company_url",
                      "tool_emails", "comment_emails", "phone", "comment_count", "all_comments", "post_title", "post_url",
@@ -161,7 +165,44 @@ def _sheet(wb, title: str, rows: list[dict], keys: list[str], auto_hide: bool = 
         ws.auto_filter.ref = f"A1:{get_column_letter(len(keys))}{len(rows) + 1}"
 
 
-def build_xlsx(rows: list[dict]) -> bytes:
+JOB_COLUMNS = [  # (key, header, width) for the Jobs sheet: every JobHarvest job, with or without a contact
+    ("title", "Job Title", 36), ("company_name", "Company", 26), ("location", "Location", 26), ("job_url", "Job Link", 12),
+    ("company_industry", "Company Industry", 24), ("company_size", "Company Size", 13), ("company_url", "Company LinkedIn", 14),
+    ("contact_count", "Contacts", 10), ("contact_names", "Contact Names", 30),
+    ("first_seen", "Date Collected (UTC)", 18), ("last_seen", "Last Seen (UTC)", 17),
+]
+
+
+def _jobs_sheet(wb, jobs: list[dict]) -> None:
+    ws = wb.create_sheet("Jobs")
+    ws.append([h for _, h, _ in JOB_COLUMNS])
+    links = {"job_url": "Open job", "company_url": "Open page"}
+    for c, (k, _, w) in enumerate(JOB_COLUMNS, 1):
+        cell = ws.cell(row=1, column=c)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="BE185D" if k in ("title", "job_url", "contact_count", "contact_names") else "0F766E")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+        ws.column_dimensions[get_column_letter(c)].width = w
+    for j in jobs:
+        ws.append([""] * len(JOB_COLUMNS))
+        rn = ws.max_row
+        for c, (k, _, _) in enumerate(JOB_COLUMNS, 1):
+            v, cell = j.get(k), ws.cell(row=rn, column=c)
+            if k in links and v:
+                cell.value, cell.hyperlink = links[k], str(v)
+                cell.font = Font(color="2563EB", underline="single")
+                continue
+            if k in ("first_seen", "last_seen"):
+                v = _when(v)
+            cell.value = v if isinstance(v, int) else ("" if v is None else str(v))
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                cell.data_type = "s"
+    ws.row_dimensions[1].height = 30
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(JOB_COLUMNS))}{len(jobs) + 1}"
+
+
+def build_xlsx(rows: list[dict], jobs: list[dict] | None = None) -> bytes:
     wb = Workbook()
     summary = wb.active
     summary.title = "Summary"
@@ -202,6 +243,9 @@ def build_xlsx(rows: list[dict]) -> bytes:
         _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS], auto_hide=True)
     for t in tools_present:
         _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], TOOL_COLUMNS[t])
+    if jobs:
+        _jobs_sheet(wb, jobs)
+        summary.append(["JobHarvest jobs (Jobs sheet)", len(jobs), "", "", ""])
     # the leads open first; the summary is the last tab
     wb.move_sheet(summary, offset=len(wb.sheetnames) - 1)
     wb.active = 0

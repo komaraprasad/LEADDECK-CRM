@@ -29,7 +29,9 @@ def name_from_linkedin(url: str | None) -> str | None:
     if not url or "/in/" not in url:
         return None
     slug = url.split("/in/", 1)[1].split("?", 1)[0].strip("/").split("/", 1)[0]
-    words = [w for w in slug.replace("_", "-").split("-") if w and w.isalpha()]
+    # 'randeepkaur0591' / 'rakesh9': drop the digits LinkedIn appends, keep the name part
+    words = [re.sub(r"\d+$", "", w) for w in slug.replace("_", "-").split("-")]
+    words = [w for w in words if w and w.isalpha()]
     return " ".join(w.capitalize() for w in words) if words and len("".join(words)) >= 2 else None
 
 
@@ -378,6 +380,30 @@ def lead_ids(db: Database, filters: dict) -> list[int]:
     where, params = _where(clean_filters(filters))
     return [r["id"] for r in db.query(
         f"SELECT p.id {_FROM} WHERE {where} ORDER BY p.id LIMIT {MAX_EXPORT}", params)]
+
+
+def export_jobs(db: Database) -> list[dict]:
+    """Every job posting JobHarvest found (with or without a hiring contact), newest first, for the Jobs sheet."""
+    contacts: dict[str, list[str]] = {}
+    for s in db.query("SELECT s.raw_payload, p.full_name, p.linkedin_url FROM lead_sources s JOIN people p ON p.id = s.person_id "
+                      "WHERE s.tool='jobharvest' AND s.kind='person'"):
+        try:
+            raw = json.loads(s["raw_payload"] or "{}")
+        except (TypeError, ValueError):
+            continue
+        url = (raw.get("job_url") or raw.get("Job URL") or "") if isinstance(raw, dict) else ""
+        if url:
+            who = s["full_name"] or name_from_linkedin(s["linkedin_url"]) or s["linkedin_url"]
+            if who not in contacts.setdefault(url.strip(), []):
+                contacts[url.strip()].append(who)
+    rows = db.query("SELECT j.title, j.job_url, j.location, j.posted, j.first_seen, j.last_seen, c.name AS company_name, "
+                    "c.industry AS company_industry, c.size AS company_size, c.linkedin_url AS company_url "
+                    "FROM job_postings j LEFT JOIN companies c ON c.id = j.company_id WHERE j.tool='jobharvest' "
+                    f"ORDER BY j.last_seen DESC, j.id DESC LIMIT {MAX_EXPORT}")
+    for r in rows:
+        names = contacts.get((r.get("job_url") or "").strip(), [])
+        r["contact_names"], r["contact_count"] = ", ".join(names), len(names)
+    return rows
 
 
 def get_lead(db: Database, pid: int) -> dict | None:

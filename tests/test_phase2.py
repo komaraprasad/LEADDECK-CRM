@@ -704,3 +704,29 @@ def test_hiringbadge_page_clutter_is_not_a_hiring_role(db):
     upsert_records(db, map_payload({"leads": [row]}).records)
     pid = db.one("SELECT id FROM people WHERE full_name='Kay M'")["id"]
     assert L.export_rows(db, ids=[pid])[0]["hiring_for"] == ""
+
+
+def test_jobharvest_export_has_contacts_sheet_and_jobs_sheet(db):
+    import io
+    from openpyxl import load_workbook
+    from app import leads as L
+    from app.mappers.jobharvest import map_payload
+    from app.merge import upsert_records
+    from app.exporter import build_xlsx
+    rows = [{"job_id": "1", "job_title": "ML Engineer", "job_url": "https://www.linkedin.com/jobs/view/1/", "location": "Hyderabad",
+             "company_name": "Sample AI", "company_url": "https://www.linkedin.com/company/sample-ai/", "company_industry": "Software",
+             "company_size": "51-200", "contact_profile_links": "https://www.linkedin.com/in/samplename0591"},
+            {"job_id": "2", "job_title": "Data Engineer", "job_url": "https://www.linkedin.com/jobs/view/2/", "location": "Pune",
+             "company_name": "Other Co", "company_url": "https://www.linkedin.com/company/other-co/"}]
+    upsert_records(db, map_payload({"rows": rows}).records)
+    people, jobs = L.export_rows(db, {"tool": "jobharvest"}), L.export_jobs(db)
+    assert people[0]["display_name"] == "Samplename"                      # digits after the name dropped
+    wb = load_workbook(io.BytesIO(build_xlsx(people, jobs)))
+    assert wb.sheetnames == ["JobHarvest", "Jobs", "Summary"]
+    hdr = [c.value for c in wb["JobHarvest"][1]]
+    assert hdr[:4] == ["Name", "Name Source", "Lead Type", "LinkedIn"] and "Headline" not in hdr and "Company LinkedIn" in hdr
+    assert hdr.index("Title") > hdr.index("Last Seen (UTC)")             # Title / Location sit in the enrichment group
+    js = wb["Jobs"]; jh = [c.value for c in js[1]]
+    assert js.max_row == 3                                                  # both jobs, also the one with no contact
+    got = {js.cell(row=r, column=1).value: js.cell(row=r, column=jh.index("Contacts") + 1).value for r in (2, 3)}
+    assert got == {"ML Engineer": 1, "Data Engineer": 0}

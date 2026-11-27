@@ -232,8 +232,8 @@ def create_app(settings: Settings | None = None, db: Database | None = None, htt
     def favicon():
         return Response(status=204)
 
-    def export_response(rows, fmt, name):
-        data = build_csv(rows) if fmt == "csv" else build_xlsx(rows)
+    def export_response(rows, fmt, name, jobs=None):
+        data = build_csv(rows) if fmt == "csv" else build_xlsx(rows, jobs)
         return Response(data, mimetype="text/csv; charset=utf-8" if fmt == "csv" else XLSX,
                         headers={"Content-Disposition": f'attachment; filename="{name}.{fmt}"'})
 
@@ -243,7 +243,11 @@ def create_app(settings: Settings | None = None, db: Database | None = None, htt
         if fmt not in ("csv", "xlsx"):
             abort(404)
         try:
-            return export_response(L.export_rows(db, filters_from(request.args)), fmt, "leaddeck-leads")
+            f = L.clean_filters(filters_from(request.args))
+            # JobHarvest's jobs (most have no contact person, so they are not leads) get their own Jobs sheet when
+            # the export is all leads or JobHarvest only; any other filter is about people, so no jobs sheet
+            jobs = L.export_jobs(db) if fmt == "xlsx" and set(f) <= {"tool"} and f.get("tool") in (None, "jobharvest") else None
+            return export_response(L.export_rows(db, f), fmt, "leaddeck-leads", jobs)
         except ValueError as e:
             return jsonify(error=str(e)), 400
 
