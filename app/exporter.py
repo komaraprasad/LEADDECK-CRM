@@ -139,25 +139,44 @@ def build_xlsx(rows: list[dict]) -> bytes:
     summary = wb.active
     summary.title = "Summary"
     per_tool = {t: [r for r in rows if t in _tools_of(r)] for t in TOOL_COLUMNS}
+    tools_present = [t for t in TOOL_COLUMNS if per_tool[t]]
+    # an export of one tool only: its sheet already is every lead, so no duplicate "All Leads" sheet
+    with_all = not (len(tools_present) == 1 and len(per_tool[tools_present[0]]) == len(rows))
     has = lambda rs, k: sum(1 for r in rs if str(_value(r, k) or "").strip())
-    summary.append(["LeadDeck export", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")])
+    summary.append(["LeadDeck export"])
+    summary.append(["Exported " + datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC") + "  ·  " + str(len(rows)) + " leads"
+                    + ("  ·  " + ", ".join(TOOL_LABELS.get(t, t) for t in tools_present) if tools_present else "")])
     summary.append([])
     summary.append(["Sheet", "Leads", "With email", "With phone", "Employer contacts"])
-    for name, rs in [("All Leads", rows)] + [(TOOL_LABELS.get(t, t), per_tool[t]) for t in TOOL_COLUMNS if per_tool[t]]:
+    sheets = ([("All Leads", rows)] if with_all else []) + [(TOOL_LABELS.get(t, t), per_tool[t]) for t in tools_present]
+    for name, rs in sheets:
         summary.append([name, len(rs), has(rs, "email"), has(rs, "phone"), sum(1 for r in rs if r.get("lead_type") == "employer_contact")])
     summary.append([])
-    summary.append(["A lead found by several tools appears on each of those tools' sheets. Column header colours: "
-                    "blue = lead, green = company, purple = contact, amber = location, pink = where it was found, grey = status."])
+    notes = ["Each sheet after this one lists leads; header colours: blue = lead, green = company, purple = contact, "
+             "amber = location, pink = where it was found, grey = status.",
+             "Columns a sheet has no data for are left out. Links say Open profile / Open job / Open post."]
+    if with_all and len(tools_present) > 1:
+        notes.insert(0, "A lead found by several tools is on each of those tools' sheets.")
+    for n in notes:
+        summary.append([n])
+        rn = summary.max_row
+        summary.merge_cells(start_row=rn, start_column=1, end_row=rn, end_column=5)
+        summary.cell(row=rn, column=1).alignment = Alignment(wrap_text=True, vertical="top")
+        summary.row_dimensions[rn].height = 32
     summary["A1"].font = Font(bold=True, size=14)
+    summary["A2"].font = Font(color="475569")
+    summary.merge_cells("A2:E2")
     for c in range(1, 6):
-        summary.cell(row=3, column=c).font = Font(bold=True, color="FFFFFF")
-        summary.cell(row=3, column=c).fill = PatternFill("solid", fgColor="1E3A8A")
+        summary.cell(row=4, column=c).font = Font(bold=True, color="FFFFFF")
+        summary.cell(row=4, column=c).fill = PatternFill("solid", fgColor="1E3A8A")
     for col, w in zip("ABCDE", (26, 10, 12, 12, 18)):
         summary.column_dimensions[col].width = w
-    _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS])
-    for t, keys in TOOL_COLUMNS.items():
-        if per_tool[t]:
-            _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], keys)
+    if with_all:
+        _sheet(wb, "All Leads", rows, [k for k, _ in EXPORT_COLUMNS])
+    for t in tools_present:
+        _sheet(wb, TOOL_LABELS.get(t, t)[:31], per_tool[t], TOOL_COLUMNS[t])
+    if not rows:
+        _sheet(wb, "Leads", rows, [k for k, _ in EXPORT_COLUMNS])
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()

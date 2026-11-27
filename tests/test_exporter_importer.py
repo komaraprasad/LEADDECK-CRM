@@ -60,3 +60,12 @@ def test_bad_type_and_size_and_unknown_tool():
         parse_export_file("hiringbadge", "x.csv", b"a" * (10 * 1024 * 1024 + 1))
     with pytest.raises(ValueError, match="unknown tool"):
         parse_export_file("nope", "x.csv", b"a")
+
+
+def test_xlsx_one_tool_has_no_duplicate_all_leads_sheet():
+    one = [{"full_name": "A", "tools": "commentminer", "email": "a@x.co"}, {"full_name": "B", "tools": "commentminer"}]
+    wb = load_workbook(io.BytesIO(build_xlsx(one)))
+    assert wb.sheetnames == ["Summary", "CommentMiner"]
+    mixed = one + [{"full_name": "C", "tools": "hiringbadge"}]
+    assert load_workbook(io.BytesIO(build_xlsx(mixed))).sheetnames == ["Summary", "All Leads", "Hiring Badge Finder", "CommentMiner"]
+    assert load_workbook(io.BytesIO(build_xlsx([]))).sheetnames == ["Summary", "All Leads"]
